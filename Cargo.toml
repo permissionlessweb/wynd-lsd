@@ -9,28 +9,28 @@ repository = "https://github.com/cosmorama/wynd-lsd"
 
 [workspace.dependencies]
 anyhow = "1"
-cosmwasm-schema = "2.1"
-cosmwasm-std = { version = "2.1", features = ["staking"] }
-cw2 = "2.0"
-cw20 = "2.0"
-cw20-base = { version = "2.0", package = "cw20-base", features = ["library"] }
-cw-controllers = "2.0"
-cw-multi-test = { version = "2", features = ["staking"] }
-cw-placeholder = { version = "2.0", git = "https://github.com/cosmorama/wynddex.git", tag = "v2.0.2", features = [
-    "library",
-] }
-cw-storage-plus = "2.0"
-cw-utils = "2.0"
+cosmwasm-schema = "3.0"
+cosmwasm-std = { version = "3.0", features = ["staking"] }
+cw2 = "3.0"
+#cw20 = "2.0.0"
+cw20            = { version = "3.0.0", git = "https://github.com/permissionlessweb/cw-plus" }
+#cw20-base = { version = "2.0.0", package = "cw20-base", features = ["library"] }
+cw20-base       = { version = "3.0.0", features = ["library"], package = "cw20-base",  git = "https://github.com/permissionlessweb/cw-plus" }
+cw-controllers = "3.0"
+cw-multi-test = { version = "3", features = ["staking"] }
+#cw-placeholder = { version = "3.0", git = "https://github.com/cosmorama/wynddex.git", tag = "v2.0.2", features = ["library"] }
+cw-placeholder = { path = "../wynddex/contracts/cw-placeholder",features = ["library"] }
+
+cw-storage-plus = "3.0"
+cw-utils = "3.0"
 semver = "1"
 serde = { version = "1", default-features = false, features = ["derive"] }
 thiserror = "1"
-wynd-lsd-hub = { path = "./contracts/lsd-hub", version = "1.3.0", features = [
-    "library",
-] }
-wyndex = { version = "2.0", git = "https://github.com/cosmorama/wynddex.git", tag = "v2.0.2" }
-wyndex-pair-lsd = { version = "2.0", git = "https://github.com/cosmorama/wynddex.git", tag = "v2.0.2", features = [
-    "library",
-] }
+wynd-lsd-hub = { path = "./contracts/lsd-hub", version = "1.3.0", features = ["library"] }
+# wyndex = { version = "2.0", git = "https://github.com/cosmorama/wynddex.git", tag = "v2.0.2" }
+wyndex = { path = "../wyndex" }
+#wyndex-pair-lsd = { version = "2.0", git = "https://github.com/cosmorama/wynddex.git", tag = "v2.0.2", features = ["library"] }
+wyndex-pair-lsd = {  path = "../wyndex", features = ["library"] }
 test-case = "3.0.0"
 
 [profile.release.package.wynd-lsd-hub]

@@ -216,10 +216,14 @@ mod execute {
         // determine the ratio before these funds were received
         let paid = must_pay(&info, &supply.bond_denom)?;
         let balance = supply.balance(deps.as_ref(), &env)?;
+        // The bank transfer happens before the contract runs, so `balance` already
+        // includes `paid`. Subtract it to get the pre-payment state for correct rate.
+        let paid_u128 = Uint128::try_from(paid).map_err(|_| StdError::msg("paid overflow"))?;
+        let balance_before = balance.saturating_sub(paid_u128);
 
         // calculate how many shares to issue, this is determined by the exchange rate
-        let issue = paid.mul_floor(supply.shares_per_token(balance - paid));
-        supply.issued += issue;
+        let issue = paid.mul_floor(supply.shares_per_token(balance_before));
+        supply.issued += Uint128::try_from(issue).unwrap();
         SUPPLY.save(deps.storage, &supply)?;
 
         let config = CONFIG.load(deps.storage)?;
@@ -245,7 +249,13 @@ mod execute {
         msg: Cw20ReceiveMsg,
     ) -> Result<Response, ContractError> {
         match from_json(&msg.msg)? {
-            ReceiveMsg::Unbond {} => unbond(deps, env, info.sender, msg.amount, msg.sender),
+            ReceiveMsg::Unbond {} => unbond(
+                deps,
+                env,
+                info.sender,
+                Uint128::try_from(msg.amount).unwrap(),
+                msg.sender,
+            ),
         }
     }
 
@@ -265,7 +275,7 @@ mod execute {
         let mut supply = CleanedSupply::load(deps.storage, &env)?;
         let balance = supply.balance(deps.as_ref(), &env)?;
 
-        let native_amount = supply.unbond(amount, balance);
+        let native_amount = supply.unbond(amount.into(), balance);
         SUPPLY.save(deps.storage, &supply)?;
 
         // create a claim
@@ -275,7 +285,7 @@ mod execute {
         CLAIMS.create_claim(
             deps.storage,
             &sender,
-            native_amount,
+            native_amount.into(),
             Timestamp::from_seconds(
                 // this might be a little tight because it assumes we immediately call reinvest at next_unbond,
                 // but it should not be a problem in practice, since the claiming will just fail until the funds are available
@@ -286,7 +296,9 @@ mod execute {
         // burn the sent tokens
         let burn_msg = WasmMsg::Execute {
             contract_addr: config.token_contract.to_string(),
-            msg: to_json_binary(&Cw20ExecuteMsg::Burn { amount })?,
+            msg: to_json_binary(&Cw20ExecuteMsg::Burn {
+                amount: amount.into(),
+            })?,
             funds: vec![],
         };
 
@@ -318,7 +330,7 @@ mod execute {
                 }
                 amount
             },
-            Some(balance.amount),
+            Some(balance.amount.try_into().unwrap()),
         )?;
         if to_send.is_zero() {
             return Err(ContractError::NothingToClaim {});
@@ -333,7 +345,7 @@ mod execute {
                 to_address: info.sender.to_string(),
                 amount: vec![Coin {
                     denom: supply.bond_denom,
-                    amount: to_send,
+                    amount: to_send.try_into().unwrap(),
                 }],
             })
             .add_attribute("action", "claim")
@@ -415,8 +427,8 @@ mod execute {
     }
 
     pub fn check_slash(deps: DepsMut, env: Env) -> Result<Response, ContractError> {
-        /// 0.00001 = 0.001%
-        const SLASHING_THRESHOLD: Decimal = Decimal::raw(10u128.pow(18 - 5));
+        // 0.00001 = 0.001%
+        let slashing_threshold: Decimal = Decimal::new(Uint128::new(10u128.pow(18 - 5)));
 
         let supply: Supply = SUPPLY.load(deps.storage)?;
 
@@ -451,9 +463,14 @@ mod execute {
                     .unwrap_or_default();
 
                 // if difference is larger than threshold, this validator was slashed
-                if stored.saturating_sub(d.amount.amount) >= stored.mul_floor(SLASHING_THRESHOLD) {
+                if stored.saturating_sub(Uint128::try_from(d.amount.amount).unwrap())
+                    >= stored.mul_floor(slashing_threshold)
+                {
                     // keep track of multiplier
-                    Some((&d.validator, Decimal::from_ratio(d.amount.amount, stored)))
+                    Some((
+                        &d.validator,
+                        Decimal::from_ratio(Uint128::try_from(d.amount.amount).unwrap(), stored),
+                    ))
                 } else {
                     None
                 }
@@ -508,6 +525,7 @@ mod execute {
             queried_delegations
                 .iter()
                 .map(|d| d.amount.amount)
+                .map(|x| Uint128::try_from(x).unwrap())
                 .sum::<Uint128>(),
             "0.0001"
         );
@@ -553,7 +571,7 @@ pub fn reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, Contract
             let result = reply
                 .result
                 .into_result()
-                .map_err(|e| StdError::generic_err(e))?;
+                .map_err(|e| StdError::msg(e.to_string()))?;
             let res = cw_utils::parse_instantiate_response_data(
                 result
                     .msg_responses
@@ -564,9 +582,7 @@ pub fn reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, Contract
                     .unwrap()
                     .as_slice(),
             )
-            .map_err(|_| {
-                StdError::parse_err("MsgInstantiateContractResponse", "failed to parse data")
-            })?;
+            .map_err(|_| StdError::msg("MsgInstantiateContractResponse: failed to parse data"))?;
 
             // Pass the contract admin of this contract to the Token contract
             let contract_info = deps
@@ -595,7 +611,10 @@ pub fn reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, Contract
             // reinvest all received rewards, even if some of the withdrawals failed
             reply::after_withdraw_rewards(deps, env)
         }
-        id => Err(StdError::generic_err(format!("invalid reply id: {}; must be 1", id)).into()),
+        id => Err(ContractError::Std(StdError::msg(format!(
+            "invalid reply id: {}; must be 1",
+            id
+        )))),
     }
 }
 
@@ -674,8 +693,8 @@ mod reply {
                         .map(|(address, amount)| StakingMsg::Delegate {
                             validator: address,
                             amount: Coin {
-                                amount,
                                 denom: supply.bond_denom.clone(),
+                                amount: amount.into(),
                             },
                         }),
                 );
@@ -738,8 +757,8 @@ mod reply {
                         .map(|Unbonding { validator, amount }| StakingMsg::Undelegate {
                             validator,
                             amount: Coin {
-                                amount,
                                 denom: supply.bond_denom.clone(),
+                                amount: amount.into(),
                             },
                         })
                         .collect();
@@ -932,7 +951,7 @@ mod tests {
         increase_contract_balance(&mut deps.querier, amount);
 
         let env = mock_env();
-        let info = mock_info(sender, &coins(amount, TOKEN));
+        let info = mock_info(sender, &coins(amount.into(), TOKEN));
         let res = execute::bond(deps.as_mut(), env, info).unwrap();
         assert_eq!(1, res.messages.len());
     }

@@ -1,8 +1,8 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
-    to_json_binary, Binary, Coin, Decimal, Deps, DepsMut, Env, Fraction, MessageInfo, Reply, Response,
-    StdResult, SubMsg, Uint128, WasmMsg,
+    to_json_binary, Binary, Coin, Decimal, Deps, DepsMut, Env, Fraction, MessageInfo, Reply,
+    Response, StdResult, SubMsg, Uint128, Uint256, WasmMsg,
 };
 use cw2::set_contract_version;
 use cw20::{BalanceResponse, Cw20ExecuteMsg, Cw20QueryMsg};
@@ -101,7 +101,7 @@ pub fn execute_bond(deps: DepsMut, info: MessageInfo) -> Result<Response, Contra
         &PairQueryMsg::SpotPricePrediction {
             offer: AssetInfo::Native(cfg.bond_denom.clone()),
             ask: AssetInfo::Token(cfg.lsd_token.to_string()),
-            max_trade: pay,
+            max_trade: Uint128::try_from(pay).unwrap(),
             target_price: exchange_rate,
             iterations: ITERATIONS,
         },
@@ -120,7 +120,7 @@ pub fn execute_bond(deps: DepsMut, info: MessageInfo) -> Result<Response, Contra
                 },
                 ask_asset_info: Some(AssetInfo::Token(cfg.lsd_token.into_string())),
                 belief_price: None,
-                max_spread: Some(Decimal::percent(50)),
+                max_spread: Some(Decimal::percent(50).into()),
                 // send back directly to original sender, so no reply needed
                 to: Some(info.sender.to_string()),
                 referral_address: None,
@@ -128,7 +128,7 @@ pub fn execute_bond(deps: DepsMut, info: MessageInfo) -> Result<Response, Contra
             })?,
             funds: vec![Coin {
                 denom: cfg.bond_denom.clone(),
-                amount: to_swap,
+                amount: Uint256::from(to_swap),
             }],
         };
         res = res
@@ -137,7 +137,7 @@ pub fn execute_bond(deps: DepsMut, info: MessageInfo) -> Result<Response, Contra
             .add_attribute("amount", to_swap);
 
         // update remaining pay for bonding
-        pay -= to_swap;
+        pay -= Uint256::from(to_swap);
     }
 
     // anything left should be bonded, this
@@ -226,7 +226,7 @@ pub fn query_simulate(deps: Deps, bond: Uint128) -> StdResult<SimulateResponse> 
         &PairQueryMsg::SpotPricePrediction {
             offer: AssetInfo::Native(cfg.bond_denom.clone()),
             ask: AssetInfo::Token(cfg.lsd_token.to_string()),
-            max_trade: bond,
+            max_trade: Uint128::try_from(bond).unwrap(),
             target_price: exchange_rate,
             iterations: ITERATIONS,
         },
@@ -235,7 +235,7 @@ pub fn query_simulate(deps: Deps, bond: Uint128) -> StdResult<SimulateResponse> 
     // how many lsd we get from bonding
     let bond = bond - trade.unwrap_or_default();
     // let mut lsd_val = bond / exchange_rate;
-    let mut lsd_val = bond * exchange_rate.denominator() / exchange_rate.numerator();
+    let mut lsd_val: Uint128 = bond.multiply_ratio(exchange_rate.denominator(), exchange_rate.numerator());
 
     if let Some(trade) = trade {
         // simulate swap to see how much would be there

@@ -230,7 +230,7 @@ impl Supply {
         let coin = deps
             .querier
             .query_balance(&env.contract.address, &self.bond_denom)?;
-        Ok(coin.amount)
+        Ok(coin.amount.try_into().unwrap())
     }
 
     pub fn cleanup_unbonding(

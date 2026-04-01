@@ -124,7 +124,7 @@ fn redelegate_msg(
 mod tests {
     use std::collections::HashMap;
 
-    use cosmwasm_std::Uint128;
+    use cosmwasm_std::{Uint128, Uint256};
 
     use crate::state::Supply;
 
@@ -386,7 +386,7 @@ mod tests {
                     let src_balance = balances
                         .get_mut(&src_validator)
                         .expect("src_validator has to exist in the balances map");
-                    *src_balance = src_balance.checked_sub(amount.amount).unwrap_or_else(|_| {
+                    *src_balance = Uint256::from_uint128(src_balance.u128()).checked_sub(amount.amount).unwrap_or_else(|_| {
                         panic!(
                             "overflowed when redelegating {} from {} to {}",
                             amount.amount, src_validator, dst_validator
