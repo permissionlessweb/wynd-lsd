@@ -2,7 +2,9 @@ use std::str::FromStr;
 
 use anyhow::Result as AnyResult;
 
+use cosmwasm_std::testing::MockApi;
 use cosmwasm_std::{testing::mock_env, Addr, CosmosMsg, Decimal, Validator};
+use cosmwasm_std::{StdResult, Uint256};
 use cw20::{BalanceResponse, Cw20QueryMsg};
 use cw_multi_test::{App, ContractWrapper, Executor};
 
@@ -86,7 +88,9 @@ impl SuiteBuilder {
                     Decimal::one(),
                 ),
                 (
-                    "junovaloper196ax4vc0lwpxndu9dyhvca7jhxp70rmcqcnylw".to_string(),
+                    MockApi::default()
+                        .addr_make("junovaloper196ax4vc0lwpxndu9dyhvca7jhxp70rmcqcnylw")
+                        .to_string(),
                     Decimal::one(),
                 ),
                 (
@@ -96,7 +100,9 @@ impl SuiteBuilder {
             ],
             commission: Decimal::percent(10),
             validators: vec![(
-                "junovaloper196ax4vc0lwpxndu9dyhvca7jhxp70rmcqcnylw".to_string(),
+                MockApi::default()
+                    .addr_make("junovaloper196ax4vc0lwpxndu9dyhvca7jhxp70rmcqcnylw")
+                    .to_string(),
                 Decimal::one(),
             )],
             epoch_period: 21 * 24 * 60 * 60,
@@ -161,7 +167,7 @@ impl SuiteBuilder {
     #[track_caller]
     pub fn build(self) -> Suite {
         let mut app = App::default();
-        let owner = Addr::unchecked("owner");
+        let owner = MockApi::default().addr_make("owner");
 
         let factory_code_id = store_hub(&mut app);
         let cw20_code_id = store_cw20(&mut app);
@@ -175,7 +181,7 @@ impl SuiteBuilder {
                 factory_code_id,
                 owner.clone(),
                 &HubInstantiateMsg {
-                    treasury: "treasury".to_string(),
+                    treasury: MockApi::default().addr_make("treasury").to_string(),
                     owner: owner.to_string(),
                     commission: self.commission,
                     validators: self.validators,
@@ -240,19 +246,12 @@ impl SuiteBuilder {
             contract_addr
         };
 
-        app.init_modules(|router, api, storage| -> AnyResult<()> {
+        app.init_modules(|router, api, storage| -> StdResult<()> {
             for (address, commission) in self.chain_validators {
-                router.staking.add_validator(
-                    api,
-                    storage,
-                    &mock_env().block,
-                    Validator {
-                        address,
-                        commission,
-                        max_commission: Decimal::one(),
-                        max_change_rate: Decimal::one(),
-                    },
-                )?;
+                let val = Validator::create(address, commission, Decimal::one(), Decimal::one());
+                router
+                    .staking
+                    .add_validator(api, storage, &mock_env().block, val)?;
             }
             Ok(())
         })
@@ -299,18 +298,18 @@ impl Suite {
     }
 
     #[allow(unused)]
-    pub fn query_cw20_balance(&self, user: &str, contract: &Addr) -> AnyResult<u128> {
+    pub fn query_cw20_balance(&self, user: &str, contract: &Addr) -> StdResult<Uint256> {
         let balance: BalanceResponse = self.app.wrap().query_wasm_smart(
             contract,
             &Cw20QueryMsg::Balance {
                 address: user.to_owned(),
             },
         )?;
-        Ok(balance.balance.into())
+        Ok(balance.balance)
     }
 
     #[allow(unused)]
-    pub fn query_validator_set(&self) -> AnyResult<Vec<(String, Decimal)>> {
+    pub fn query_validator_set(&self) -> StdResult<Vec<(String, Decimal)>> {
         let res: ValidatorSetResponse = self
             .app
             .wrap()
@@ -318,7 +317,7 @@ impl Suite {
         Ok(res.validator_set)
     }
 
-    pub fn query_all_options(&self) -> AnyResult<Vec<String>> {
+    pub fn query_all_options(&self) -> StdResult<Vec<String>> {
         let res: AllOptionsResponse = self
             .app
             .wrap()
@@ -327,7 +326,7 @@ impl Suite {
         Ok(res.options)
     }
 
-    pub fn query_check_option(&self, option: String) -> AnyResult<bool> {
+    pub fn query_check_option(&self, option: String) -> StdResult<bool> {
         let res: CheckOptionResponse = self.app.wrap().query_wasm_smart(
             self.gauge_adapter.clone(),
             &AdapterQueryMsg::CheckOption { option },

@@ -11,18 +11,18 @@ repository = "https://github.com/cosmorama/wynd-lsd"
 anyhow = "1"
 cosmwasm-schema = "3.0"
 cosmwasm-std = { version = "3.0", features = ["staking"] }
-cw2 = "3.0"
+cw2 = { path = "../cw-minus/packages/cw2" }
 #cw20 = "2.0.0"
-cw20            = { version = "3.0.0", git = "https://github.com/permissionlessweb/cw-plus" }
+cw20            = { path = "../cw-plus/packages/cw20" }
 #cw20-base = { version = "2.0.0", package = "cw20-base", features = ["library"] }
-cw20-base       = { version = "3.0.0", features = ["library"], package = "cw20-base",  git = "https://github.com/permissionlessweb/cw-plus" }
-cw-controllers = "3.0"
+cw20-base       = { path = "../cw-plus/contracts/cw20-base" }
+cw-controllers = { path = "../cw-minus/packages/controllers" }
 cw-multi-test = { version = "3", features = ["staking"] }
 #cw-placeholder = { version = "3.0", git = "https://github.com/cosmorama/wynddex.git", tag = "v2.0.2", features = ["library"] }
 cw-placeholder = { path = "../wynddex/contracts/cw-placeholder",features = ["library"] }
 
 cw-storage-plus = "3.0"
-cw-utils = "3.0"
+cw-utils = { path = "../cw-minus/packages/cw-utils" }
 semver = "1"
 serde = { version = "1", default-features = false, features = ["derive"] }
 thiserror = "1"

@@ -1,6 +1,7 @@
 use std::{collections::HashMap, str::FromStr};
 
-use cosmwasm_std::Decimal;
+use cosmwasm_std::testing::MockApi;
+use cosmwasm_std::{Decimal, Uint256};
 
 use crate::multitest::suite::SuiteBuilder;
 use crate::state::BONDED;
@@ -9,8 +10,8 @@ const HOUR: u64 = 60 * 60;
 const DAY: u64 = 24 * HOUR;
 const EPOCH: u64 = 23 * HOUR;
 
-fn test_empty_rewards(validators: Vec<(&str, Decimal)>, empty_validators: &[&str]) {
-    let delegator = "delegator";
+fn test_empty_rewards(validators: Vec<(&String, Decimal)>, empty_validators: &[&str]) {
+    let delegator = &MockApi::default().addr_make("delegator");
 
     let amount = 1_000_000u128;
     let mut suite = SuiteBuilder::new()
@@ -36,9 +37,8 @@ fn test_empty_rewards(validators: Vec<(&str, Decimal)>, empty_validators: &[&str
                 .find(|d| d.validator == *empty_val)
                 .unwrap()
                 .amount
-                .amount
-                .u128(),
-            1u128,
+                .amount,
+            Uint256::one(),
             "validator {} should have tiny stake",
             empty_val
         );
@@ -66,11 +66,14 @@ fn test_empty_rewards(validators: Vec<(&str, Decimal)>, empty_validators: &[&str
             .unwrap()
             .into_iter()
             .flat_map(|d| d.accumulated_rewards)
-            .map(|c| c.amount.u128())
-            .sum::<u128>(),
-        0
+            .map(|c| c.amount)
+            .sum::<Uint256>(),
+        Uint256::zero()
     );
-    assert_eq!(suite.query_balance(suite.hub.as_str(), "FUN").unwrap(), 0);
+    assert_eq!(
+        suite.query_balance(&suite.hub, "FUN").unwrap(),
+        Uint256::zero()
+    );
 }
 
 #[test]
@@ -78,31 +81,49 @@ fn reinvest_failing_withdraw() {
     // we set a very low weight to one of the validators to make the stake so small that we don't get any rewards
     test_empty_rewards(
         vec![
-            ("testvaloper1", Decimal::from_str("0.000001").unwrap()),
-            ("testvaloper2", Decimal::from_str("0.999999").unwrap()),
+            (
+                &MockApi::default().addr_make("testvaloper1").to_string(),
+                Decimal::from_str("0.000001").unwrap(),
+            ),
+            (
+                &MockApi::default().addr_make("testvaloper2").to_string(),
+                Decimal::from_str("0.999999").unwrap(),
+            ),
         ],
-        &["testvaloper1"],
+        &[&MockApi::default().addr_make("testvaloper1").to_string()],
     );
     // now the other way around (to test that it also works if the last message fails)
     test_empty_rewards(
         vec![
-            ("testvaloper1", Decimal::from_str("0.999999").unwrap()),
-            ("testvaloper2", Decimal::from_str("0.000001").unwrap()),
+            (
+                &MockApi::default().addr_make("testvaloper1").to_string(),
+                Decimal::from_str("0.999999").unwrap(),
+            ),
+            (
+                &MockApi::default().addr_make("testvaloper2").to_string(),
+                Decimal::from_str("0.000001").unwrap(),
+            ),
         ],
-        &["testvaloper2"],
+        &[&MockApi::default().addr_make("testvaloper2").to_string()],
     );
 }
 
 #[test]
 fn bonded_updated_correctly() {
-    let delegator = "delegator";
+    let delegator = &MockApi::default().addr_make("delegator");
 
     let amount = 1_000_000u128;
     let mut suite = SuiteBuilder::new()
         .with_initial_balances(vec![(delegator, amount)])
         .with_validators(vec![
-            ("testvaloper1", Decimal::percent(50)),
-            ("testvaloper2", Decimal::percent(50)),
+            (
+                &MockApi::default().addr_make("testvaloper1").to_string(),
+                Decimal::percent(50),
+            ),
+            (
+                &MockApi::default().addr_make("testvaloper2").to_string(),
+                Decimal::percent(50),
+            ),
         ])
         .with_periods(EPOCH, 28 * DAY)
         .build();
@@ -117,8 +138,11 @@ fn bonded_updated_correctly() {
     let bonded = BONDED.query(&suite.app.wrap(), suite.hub.clone()).unwrap();
     assert_eq!(
         HashMap::from([
-            ("testvaloper1".to_string(), (amount / 2).into()),
-            ("testvaloper2".to_string(), (amount / 2).into())
+            (
+                MockApi::default().addr_make("testvaloper1").to_string(),
+                (amount / 2).into()
+            ),
+            (MockApi::default().addr_make("testvaloper2").to_string(), (amount / 2).into())
         ]),
         bonded.into_iter().collect()
     );
@@ -135,17 +159,17 @@ fn bonded_updated_correctly() {
     // 80% APR, 5% validator commission, 5% treasury commission
     // => rewards per year: 0.8 * 0.95 * 0.95 * amount = 0.722 * amount
     // let rewards = 5 * EPOCH as u128 * amount * 722 / (365 * DAY as u128 * 1000);
-    let rewards = 11374u128; // TODO: why this number? calculation above yields only 9478
+    let rewards = 9478u128;
 
     let bonded = BONDED.query(&suite.app.wrap(), suite.hub.clone()).unwrap();
     assert_eq!(
         HashMap::from([
             (
-                "testvaloper1".to_string(),
+                MockApi::default().addr_make("testvaloper1").to_string(),
                 (amount / 4 + rewards / 2).into()
             ),
             (
-                "testvaloper2".to_string(),
+                MockApi::default().addr_make("testvaloper2").to_string(),
                 (amount / 4 + rewards / 2).into()
             )
         ]),

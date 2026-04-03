@@ -2,14 +2,18 @@ use crate::ContractError;
 
 use super::suite::SuiteBuilder;
 
-use cosmwasm_std::{Decimal, Uint128};
+use cosmwasm_std::testing::MockApi;
+use cosmwasm_std::{Decimal, Uint128, Uint256};
 
 const DAY: u64 = 24 * HOUR;
 const HOUR: u64 = 60 * 60;
 
 #[test]
 fn bond_claim_without_unbond() {
-    let delegators = &["delegator1", "delegator2"];
+    let delegators = &[
+        &MockApi::default().addr_make("delegator1"),
+        &MockApi::default().addr_make("delegator2"),
+    ];
 
     let initial_staking_amount = 1_000_000u128;
     let mut suite = SuiteBuilder::new()
@@ -27,28 +31,34 @@ fn bond_claim_without_unbond() {
 
     // Users now have the same amount of LSD tokens as they staked
     let lsd_token_balance = suite.query_cw20_balance(delegators[0], &lsd).unwrap();
-    assert_eq!(
-        lsd_token_balance,
-        Uint128::new(initial_staking_amount).u128()
-    );
+    assert_eq!(lsd_token_balance, Uint256::new(initial_staking_amount));
 
     // Submit a claim before doing unbonding, it should raise a NothingToClaim Error
-    assert!(matches!(
-        suite.claim(delegators[0]).unwrap_err().downcast().unwrap(),
-        ContractError::NothingToClaim {}
-    ));
+    let err = suite.claim(delegators[0]).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains(&ContractError::NothingToClaim {}.to_string()),
+        "expected NothingToClaim error, got: {}",
+        err
+    );
 }
 
 #[test]
 fn bond_with_native_unbond_with_wrong_token() {
-    let delegator = "delegator";
+    let delegator = &MockApi::default().addr_make("delegator");
 
     let amount = 1_000_003u128;
     let mut suite = SuiteBuilder::new()
         .with_initial_balances(vec![(delegator, amount)])
         .with_validators(vec![
-            ("testvaloper1", Decimal::percent(50)),
-            ("testvaloper2", Decimal::percent(50)),
+            (
+                &MockApi::default().addr_make("testvaloper1").to_string(),
+                Decimal::percent(50),
+            ),
+            (
+                &MockApi::default().addr_make("testvaloper2").to_string(),
+                Decimal::percent(50),
+            ),
         ])
         .with_periods(23 * HOUR, 28 * DAY)
         .build();
@@ -66,12 +76,13 @@ fn bond_with_native_unbond_with_wrong_token() {
     // now unbond but with an address that is not the lsd token
 
     // Expect InvalidToken
-    assert!(matches!(
-        suite
-            .unbond(delegator, &suite.other_token_contract.clone(), amount)
-            .unwrap_err()
-            .downcast()
-            .unwrap(),
-        ContractError::InvalidToken {}
-    ));
+    let err = suite
+        .unbond(delegator, &suite.other_token_contract.clone(), amount)
+        .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains(&ContractError::InvalidToken {}.to_string()),
+        "expected InvalidToken error, got: {}",
+        err
+    );
 }

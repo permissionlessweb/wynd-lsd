@@ -7,8 +7,10 @@ use crate::{
 };
 use anyhow::Result as AnyResult;
 use cosmwasm_std::{
-    coins, to_json_binary, Addr, Coin, ContractInfoResponse, Decimal, Delegation, Empty,
-    FullDelegation, MemoryStorage, StdResult, Storage, Uint128, Validator,
+    coins,
+    testing::{MockApi, MockStorage},
+    to_json_binary, Addr, Coin, ContractInfoResponse, Decimal, Delegation, Empty, FullDelegation,
+    StdResult, Storage, Uint128, Uint256, Validator,
 };
 use cw20::{BalanceResponse, Cw20Coin, Cw20QueryMsg};
 use cw20_base::msg::InstantiateMsg as Cw20InstantiateMsg;
@@ -61,7 +63,10 @@ impl SuiteBuilder {
             token_symbol: "FUN".to_owned(),
             token_decimals: 9,
             initial_balances: vec![],
-            validators: vec![("testvaloper1".to_string(), Decimal::percent(100))],
+            validators: vec![(
+                MockApi::default().addr_make("testvaloper1").to_string(),
+                Decimal::percent(100),
+            )],
             registered_validators: vec![],
             validator_commission: Decimal::percent(5),
             treasury_commission: Decimal::percent(5),
@@ -72,11 +77,11 @@ impl SuiteBuilder {
         }
     }
 
-    pub fn with_initial_balances(mut self, balances: Vec<(&str, u128)>) -> Self {
+    pub fn with_initial_balances(mut self, balances: Vec<(&Addr, u128)>) -> Self {
         let initial_balances = balances
             .into_iter()
             .map(|(address, amount)| Cw20Coin {
-                address: address.to_owned(),
+                address: address.to_string(),
                 amount: amount.into(),
             })
             .collect::<Vec<_>>();
@@ -89,7 +94,7 @@ impl SuiteBuilder {
         self
     }
 
-    pub fn with_validators(mut self, validators: Vec<(&str, Decimal)>) -> Self {
+    pub fn with_validators(mut self, validators: Vec<(&String, Decimal)>) -> Self {
         let validators = validators
             .into_iter()
             .map(|(address, commission)| (address.to_owned(), commission))
@@ -112,11 +117,11 @@ impl SuiteBuilder {
     #[track_caller]
     pub fn build(self) -> Suite {
         let mut app: App = App::default();
-        let admin = Addr::unchecked("admin");
+        let admin = MockApi::default().addr_make("admin");
         // add validators
         let valopers = self.validators.iter().map(|(validator, _)| {
             Validator::new(
-                validator.clone(),
+                validator.to_string(),
                 self.validator_commission,
                 Decimal::percent(100),
                 Decimal::percent(1),
@@ -134,7 +139,7 @@ impl SuiteBuilder {
         let staking_info = StakingInfo {
             bonded_denom: "FUN".to_string(),
             unbonding_time: self.unbond_period,
-            apr: Decimal::percent(80),
+            apr: Decimal::percent(80).into(),
         };
         let block_info = app.block_info();
         // Use init_modules to setup the validators
@@ -179,10 +184,10 @@ impl SuiteBuilder {
                 hub_id,
                 admin.clone(),
                 &InstantiateMsg {
-                    treasury: "treasury".to_string(),
+                    treasury: MockApi::default().addr_make("treasury").to_string(),
                     commission: self.treasury_commission,
                     validators: self.validators,
-                    owner: "owner".to_string(),
+                    owner: MockApi::default().addr_make("owner").to_string(),
 
                     epoch_period: self.epoch_period,
                     unbond_period: self.unbond_period,
@@ -249,98 +254,119 @@ impl Suite {
     }
 
     pub fn reinvest(&mut self) -> AnyResult<AppResponse> {
-        self.app.execute_contract(
-            Addr::unchecked("anyone"),
-            self.hub.clone(),
-            &ExecuteMsg::Reinvest {},
-            &[],
-        )
+        Ok(self
+            .app
+            .execute_contract(
+                Addr::unchecked("anyone"),
+                self.hub.clone(),
+                &ExecuteMsg::Reinvest {},
+                &[],
+            )
+            .map_err(|e| anyhow::anyhow!(e))?)
     }
 
     pub fn update_liquidity_discount(
         &mut self,
-        sender: &str,
+        sender: &Addr,
         new_discount: Decimal,
     ) -> AnyResult<AppResponse> {
-        self.app.execute_contract(
-            Addr::unchecked(sender),
-            self.hub.clone(),
-            &ExecuteMsg::UpdateLiquidityDiscount { new_discount },
-            &[],
-        )
+        Ok(self
+            .app
+            .execute_contract(
+                Addr::unchecked(sender),
+                self.hub.clone(),
+                &ExecuteMsg::UpdateLiquidityDiscount { new_discount },
+                &[],
+            )
+            .map_err(|e| anyhow::anyhow!(e))?)
     }
 
-    pub fn bond(&mut self, sender: &str, amount: u128) -> AnyResult<AppResponse> {
-        self.app.execute_contract(
-            Addr::unchecked(sender),
-            self.hub.clone(),
-            &ExecuteMsg::Bond {},
-            &coins(amount, "FUN"),
-        )
+    pub fn bond(&mut self, sender: &Addr, amount: u128) -> AnyResult<AppResponse> {
+        Ok(self
+            .app
+            .execute_contract(
+                Addr::unchecked(sender),
+                self.hub.clone(),
+                &ExecuteMsg::Bond {},
+                &coins(amount, "FUN"),
+            )
+            .map_err(|e| anyhow::anyhow!(e))?)
     }
 
     pub fn unbond(
         &mut self,
-        sender: &str,
+        sender: &Addr,
         token_contract: &Addr,
-        balance: u128,
+        balance: impl Into<Uint256>,
     ) -> AnyResult<AppResponse> {
-        let msg = to_json_binary(&ReceiveMsg::Unbond {})?;
+        let msg = to_json_binary(&ReceiveMsg::Unbond {}).unwrap();
 
-        self.app.execute_contract(
-            Addr::unchecked(sender),
-            token_contract.clone(),
-            &cw20::Cw20ExecuteMsg::Send {
-                contract: self.hub.clone().to_string(),
-                amount: balance.into(),
-                msg,
-            },
-            &[],
-        )
+        Ok(self
+            .app
+            .execute_contract(
+                Addr::unchecked(sender),
+                token_contract.clone(),
+                &cw20::Cw20ExecuteMsg::Send {
+                    contract: self.hub.clone().to_string(),
+                    amount: balance.into(),
+                    msg,
+                },
+                &[],
+            )
+            .map_err(|e| anyhow::anyhow!(e))?)
     }
 
     pub fn check_slash(&mut self) -> AnyResult<AppResponse> {
-        self.app.execute_contract(
-            Addr::unchecked("anyone"),
-            self.hub.clone(),
-            &ExecuteMsg::CheckSlash {},
-            &[],
-        )
+        Ok(self
+            .app
+            .execute_contract(
+                Addr::unchecked("anyone"),
+                self.hub.clone(),
+                &ExecuteMsg::CheckSlash {},
+                &[],
+            )
+            .map_err(|e| anyhow::anyhow!(e))?)
     }
 
-    pub fn claim(&mut self, sender: &str) -> AnyResult<AppResponse> {
-        self.app.execute_contract(
-            Addr::unchecked(sender),
-            self.hub.clone(),
-            &ExecuteMsg::Claim {},
-            &[],
-        )
+    pub fn claim(&mut self, sender: &Addr) -> AnyResult<AppResponse> {
+        Ok(self
+            .app
+            .execute_contract(
+                Addr::unchecked(sender),
+                self.hub.clone(),
+                &ExecuteMsg::Claim {},
+                &[],
+            )
+            .map_err(|e| anyhow::anyhow!(e))?)
     }
 
     /// returns address' balance of native token
     pub fn set_validators(
         &mut self,
-        sender: &str,
+        sender: &Addr,
         new_validators: Vec<(String, Decimal)>,
     ) -> AnyResult<AppResponse> {
-        self.app.execute_contract(
-            Addr::unchecked(sender),
-            self.hub.clone(),
-            &ExecuteMsg::SetValidators { new_validators },
-            &[],
-        )
+        Ok(self
+            .app
+            .execute_contract(
+                Addr::unchecked(sender),
+                self.hub.clone(),
+                &ExecuteMsg::SetValidators { new_validators },
+                &[],
+            )
+            .map_err(|e| anyhow::anyhow!(e))?)
     }
-    pub fn query_balance(&self, user: &str, denom: &str) -> AnyResult<u128> {
-        Ok(self.app.wrap().query_balance(user, denom)?.amount.u128())
+    pub fn query_balance(&self, user: &Addr, denom: &str) -> StdResult<Uint256> {
+        Ok(self.app.wrap().query_balance(user, denom)?.amount)
     }
 
     /// Queries all delegations of the hub contract
-    pub fn query_delegations(&self) -> AnyResult<Vec<Delegation>> {
+    pub fn query_delegations(&self) -> StdResult<Vec<Delegation>> {
         Ok(self.app.wrap().query_all_delegations(&self.hub)?)
     }
 
     /// Queries all full delegations of the hub contract
-    pub fn query_full_delegations(&self) -> AnyResult<Vec<FullDelegation>> {
+    pub fn query_full_delegations(&self) -> StdResult<Vec<FullDelegation>> {
         let s = self
             .query_validator_set()?
             .into_iter()
@@ -353,23 +379,23 @@ impl Suite {
         Ok(s.into_iter().flatten().collect())
     }
 
-    pub fn query_cw20_balance(&self, user: &str, contract: &Addr) -> AnyResult<u128> {
+    pub fn query_cw20_balance(&self, user: &Addr, contract: &Addr) -> StdResult<Uint256> {
         let balance: BalanceResponse = self.app.wrap().query_wasm_smart(
             contract,
             &Cw20QueryMsg::Balance {
-                address: user.to_owned(),
+                address: user.to_string(),
             },
         )?;
-        Ok(balance.balance.into())
+        Ok(balance.balance)
     }
 
-    pub fn query_contract_admin(&self, contract: &Addr) -> AnyResult<String> {
+    pub fn query_contract_admin(&self, contract: &Addr) -> StdResult<String> {
         let contract_info: ContractInfoResponse =
             self.app.wrap().query_wasm_contract_info(contract)?;
         Ok(contract_info.admin.map(Into::into).unwrap_or_default())
     }
 
-    pub fn query_exchange_rate(&self) -> AnyResult<Decimal> {
+    pub fn query_exchange_rate(&self) -> StdResult<Decimal> {
         let resp: ExchangeRateResponse = self
             .app
             .wrap()
@@ -377,7 +403,7 @@ impl Suite {
         Ok(resp.exchange_rate)
     }
 
-    pub fn query_tvl(&self) -> AnyResult<Uint128> {
+    pub fn query_tvl(&self) -> StdResult<Uint128> {
         Ok(self
             .app
             .wrap()
@@ -386,7 +412,7 @@ impl Suite {
             .total_bonded)
     }
 
-    pub fn query_target_value(&self) -> AnyResult<Decimal> {
+    pub fn query_target_value(&self) -> StdResult<Decimal> {
         let resp: TargetValueResponse = self
             .app
             .wrap()
@@ -394,7 +420,7 @@ impl Suite {
         Ok(resp.target_value)
     }
 
-    pub fn query_lsd_token(&self) -> AnyResult<Addr> {
+    pub fn query_lsd_token(&self) -> StdResult<Addr> {
         let balance: ConfigResponse = self
             .app
             .wrap()
@@ -402,7 +428,7 @@ impl Suite {
         Ok(balance.token_contract)
     }
 
-    pub fn query_claims(&self, claim_addr: String) -> AnyResult<Vec<Claim>> {
+    pub fn query_claims(&self, claim_addr: String) -> StdResult<Vec<Claim>> {
         let claims: ClaimsResponse = self.app.wrap().query_wasm_smart(
             self.hub.clone(),
             &QueryMsg::Claims {
@@ -416,7 +442,7 @@ impl Suite {
     /// This is done while updating the block
     pub fn process_native_unbonding(&mut self) {}
 
-    pub fn query_validator_set(&self) -> AnyResult<Vec<(String, Decimal)>> {
+    pub fn query_validator_set(&self) -> StdResult<Vec<(String, Decimal)>> {
         let vals: ValidatorSetResponse = self
             .app
             .wrap()
@@ -425,19 +451,19 @@ impl Suite {
     }
 
     /// This let's us use lower level query type functions on a synthetic copy of the state of the hub contract storage
-    pub fn read_hub_storage(&self) -> MemoryStorage {
-        let mut storage = MemoryStorage::new();
+    pub fn read_hub_storage(&self) -> MockStorage {
+        let mut storage = MockStorage::new();
         for (key, value) in self.app.dump_wasm_raw(&self.hub) {
             storage.set(&key, &value);
         }
         storage
     }
 
-    pub fn slash(&mut self, validator: &str, amount: Decimal) -> AnyResult<AppResponse> {
+    pub fn slash(&mut self, validator: &Addr, amount: Decimal) -> StdResult<AppResponse> {
         self.app.sudo(
             StakingSudo::Slash {
                 validator: validator.to_string(),
-                percentage: amount,
+                percentage: amount.into(),
             }
             .into(),
         )

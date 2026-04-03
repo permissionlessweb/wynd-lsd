@@ -1,13 +1,17 @@
+use cosmwasm_std::testing::MockApi;
 use cosmwasm_std::Addr;
 
 use crate::multitest::suite::SuiteBuilder;
 
 #[test]
 fn option_queries() {
+    let a = MockApi::default().addr_make("junovaloper196ax4vc0lwpxndu9dyhvca7jhxp70rmcqcnylw");
+    let aa = MockApi::default().addr_make("junovaloper1t8ehvswxjfn3ejzkjtntcyrqwvmvuknzmvtaaa");
+    let b = MockApi::default().addr_make("junovaloper1y0us8xvsvfvqkk9c6nt5cfyu5au5tww2wsdcwk");
     let validators = vec![
-        ("junovaloper1t8ehvswxjfn3ejzkjtntcyrqwvmvuknzmvtaaa", "1.0"),
-        ("junovaloper196ax4vc0lwpxndu9dyhvca7jhxp70rmcqcnylw", "1.0"),
-        ("junovaloper1y0us8xvsvfvqkk9c6nt5cfyu5au5tww2wsdcwk", "1.0"),
+        (aa.as_str(), "1.0"),
+        (a.as_str(), "1.0"),
+        (b.as_str(), "1.0"),
     ];
     let suite = SuiteBuilder::new()
         .with_chain_validators(validators.clone())
@@ -34,12 +38,17 @@ fn option_queries() {
 
 #[test]
 fn query_validators_with_commission_cap() {
+    let a = MockApi::default().addr_make("junovaloper1t8ehvswxjfn3ejzkjtntcyrqwvmvuknzmvtaaa");
+    let b = MockApi::default().addr_make("junovaloper196ax4vc0lwpxndu9dyhvca7jhxp70rmcqcnylw");
+    let c = MockApi::default().addr_make("junovaloper196ax4vc0lwpxndu9dyhvca7jhxpsdawytdfsgf");
+    let d = MockApi::default().addr_make("junovaloper196ax4vc0lwpxndu9dyhvca7jhxp70rdadsadsa");
+    let e = MockApi::default().addr_make("junovaloper1y0us8xvsvfvqkk9c6nt5cfyu5au5tww2wsdcwk");
     let validators = vec![
-        ("junovaloper1t8ehvswxjfn3ejzkjtntcyrqwvmvuknzmvtaaa", "1.0"),
-        ("junovaloper196ax4vc0lwpxndu9dyhvca7jhxp70rmcqcnylw", "0.2"),
-        ("junovaloper196ax4vc0lwpxndu9dyhvca7jhxpsdawytdfsgf", "0.3"),
-        ("junovaloper196ax4vc0lwpxndu9dyhvca7jhxp70rdadsadsa", "0.8"),
-        ("junovaloper1y0us8xvsvfvqkk9c6nt5cfyu5au5tww2wsdcwk", "1.0"),
+        (a.as_str(), "1.0"),
+        (b.as_str(), "0.2"),
+        (c.as_str(), "0.3"),
+        (d.as_str(), "0.8"),
+        (e.as_str(), "1.0"),
     ];
     let suite = SuiteBuilder::new()
         .with_chain_validators(validators.clone())
@@ -51,8 +60,12 @@ fn query_validators_with_commission_cap() {
     assert_eq!(
         options,
         vec![
-            "junovaloper196ax4vc0lwpxndu9dyhvca7jhxp70rmcqcnylw",
-            "junovaloper196ax4vc0lwpxndu9dyhvca7jhxpsdawytdfsgf"
+            MockApi::default()
+                .addr_make("junovaloper196ax4vc0lwpxndu9dyhvca7jhxp70rmcqcnylw")
+                .as_str(),
+            MockApi::default()
+                .addr_make("junovaloper196ax4vc0lwpxndu9dyhvca7jhxpsdawytdfsgf")
+                .as_str(),
         ]
     );
 }

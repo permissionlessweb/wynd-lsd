@@ -3,7 +3,7 @@ use std::ops::{Deref, DerefMut};
 use crate::ContractError;
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{
-    Addr, Decimal, Deps, Env, Order, OverflowError, StdError, StdResult, Storage, Uint128,
+    Addr, Decimal, Deps, Env, Order, OverflowError, StdError, StdResult, Storage, Uint128, Uint256,
 };
 use cw_storage_plus::{Bound, Item, Map};
 
@@ -281,17 +281,18 @@ impl CleanedSupply {
     /// This should be maintained on deposits and withdrawals and only
     /// modify (increase) on reinvest.
     /// You must pass in the current balance of the contract (Bank balance)
-    pub fn tokens_per_share(&self, balance: Uint128) -> Decimal {
+    pub fn tokens_per_share(&self, balance: impl Into<Uint256>) -> Decimal {
         // ensure that we return 1 at the beginning (when no ratio has been set)
         if self.issued.is_zero() {
             Decimal::one()
         } else {
-            Decimal::from_ratio(self.assets(balance), self.issued)
+            let assets = self.assets(balance);
+            Decimal::from_ratio(assets, self.issued)
         }
     }
 
     /// This is 1/tokens_per_share, implemented here to reduce rounding
-    pub fn shares_per_token(&self, balance: Uint128) -> Decimal {
+    pub fn shares_per_token(&self, balance: impl Into<Uint256>) -> Decimal {
         let assets = self.assets(balance);
         // ensure that we return 1 at the beginning (when no ratio has been set)
         if assets.is_zero() {
@@ -302,16 +303,18 @@ impl CleanedSupply {
     }
 
     /// Returns the total amount of native tokens that are backing all of the lsd tokens.
+    /// Converts Uint256 balance to Uint128 (safe for real-world coin amounts).
     #[inline]
-    fn assets(&self, balance: Uint128) -> Uint128 {
-        self.total_bonded + self.total_unbonding + balance - self.claims
+    fn assets(&self, balance: impl Into<Uint256>) -> Uint128 {
+        let balance_128 = Uint128::try_from(balance.into()).expect("balance overflow");
+        self.total_bonded + self.total_unbonding + balance_128 - self.claims
     }
 
     /// Removes the given `amount` from the issued tokens and adds the corresponding native amount to claims.
     /// Also returns the native claim amount
     /// The amount parameter is denominated in lsd tokens.
     /// Note that this only updates the supply. Make sure to create a claim for the user as well.
-    pub fn unbond(&mut self, amount: Uint128, balance: Uint128) -> Uint128 {
+    pub fn unbond(&mut self, amount: Uint128, balance: impl Into<Uint256>) -> Uint128 {
         let native = amount.mul_floor(self.tokens_per_share(balance));
         self.issued -= amount;
         self.claims += native;

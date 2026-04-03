@@ -101,8 +101,8 @@ pub fn execute_bond(deps: DepsMut, info: MessageInfo) -> Result<Response, Contra
         &PairQueryMsg::SpotPricePrediction {
             offer: AssetInfo::Native(cfg.bond_denom.clone()),
             ask: AssetInfo::Token(cfg.lsd_token.to_string()),
-            max_trade: Uint128::try_from(pay).unwrap(),
-            target_price: exchange_rate,
+            max_trade: Uint256::try_from(pay).unwrap(),
+            target_price: exchange_rate.into(),
             iterations: ITERATIONS,
         },
     )?;
@@ -226,16 +226,17 @@ pub fn query_simulate(deps: Deps, bond: Uint128) -> StdResult<SimulateResponse> 
         &PairQueryMsg::SpotPricePrediction {
             offer: AssetInfo::Native(cfg.bond_denom.clone()),
             ask: AssetInfo::Token(cfg.lsd_token.to_string()),
-            max_trade: Uint128::try_from(bond).unwrap(),
-            target_price: exchange_rate,
+            max_trade: Uint256::try_from(bond).unwrap(),
+            target_price: exchange_rate.into(),
             iterations: ITERATIONS,
         },
     )?;
 
     // how many lsd we get from bonding
-    let bond = bond - trade.unwrap_or_default();
+    let bond: Uint256 = Uint256::new(bond.u128()) - trade.unwrap_or_default();
     // let mut lsd_val = bond / exchange_rate;
-    let mut lsd_val: Uint128 = bond.multiply_ratio(exchange_rate.denominator(), exchange_rate.numerator());
+    let mut lsd_val: Uint256 =
+        bond.multiply_ratio(exchange_rate.denominator(), exchange_rate.numerator());
 
     if let Some(trade) = trade {
         // simulate swap to see how much would be there

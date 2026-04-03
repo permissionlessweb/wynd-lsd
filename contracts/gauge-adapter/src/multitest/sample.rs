@@ -1,3 +1,4 @@
+use cosmwasm_std::testing::MockApi;
 use cosmwasm_std::Decimal;
 
 use super::suite::SuiteBuilder;
@@ -8,7 +9,9 @@ fn updating_validators_works() {
 
     let selected = vec![
         (
-            "junovaloper196ax4vc0lwpxndu9dyhvca7jhxp70rmcqcnylw".to_string(),
+            MockApi::default()
+                .addr_make("junovaloper196ax4vc0lwpxndu9dyhvca7jhxp70rmcqcnylw")
+                .to_string(),
             Decimal::percent(50),
         ),
         (
