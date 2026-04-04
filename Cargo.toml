@@ -19,7 +19,7 @@ cw20-base = { git = "https://github.com/permissionlessweb/cw-plus", branch = "ma
 cw-controllers = { git = "https://github.com/permissionlessweb/cw-minus", branch = "main" }
 cw-multi-test = { git = "https://github.com/permissionlessweb/cw-multi-test", branch = "mvp" }
 #cw-placeholder = { version = "3.0", git = "https://github.com/cosmorama/wynddex.git", tag = "v2.0.2", features = ["library"] }
-cw-placeholder = { path = "../wynddex/contracts/cw-placeholder",features = ["library"] }
+cw-placeholder = { git = "https://github.com/permissionlessweb/wynddex", branch = "mvp", features = ["library"] }
 
 cw-storage-plus = { git = "https://github.com/permissionlessweb/cw-storage-plus", branch = "mvp" }
 cw-utils = { git = "https://github.com/permissionlessweb/cw-minus", branch = "main" }
@@ -30,7 +30,7 @@ wynd-lsd-hub = { path = "./contracts/lsd-hub", version = "1.3.0", features = ["l
 # wyndex = { version = "2.0", git = "https://github.com/cosmorama/wynddex.git", tag = "v2.0.2" }
 wyndex = { git = "https://github.com/permissionlessweb/wynddex", branch = "mvp" }
 #wyndex-pair-lsd = { version = "2.0", git = "https://github.com/cosmorama/wynddex.git", tag = "v2.0.2", features = ["library"] }
-wyndex-pair-lsd = {  path = "../wyndex", features = ["library"] }
+wyndex-pair-lsd = { git = "https://github.com/permissionlessweb/wynddex", branch = "mvp", features = ["library"] }
 test-case = "3.0.0"
 
 [profile.release.package.wynd-lsd-hub]
