@@ -9,20 +9,20 @@ repository = "https://github.com/cosmorama/wynd-lsd"
 
 [workspace.dependencies]
 anyhow = "1"
-cosmwasm-schema = "3.0.4"
-cosmwasm-std = { version = "3.0.4", features = ["staking"] }
-cw2 = { path = "../cw-minus/packages/cw2" }
+cosmwasm-schema = { git = "https://github.com/permissionlessweb/cosmwasm", branch = "mvp" }
+cosmwasm-std = { git = "https://github.com/permissionlessweb/cosmwasm", branch = "mvp" }
+cw2 = { git = "https://github.com/permissionlessweb/cw-minus", branch = "main" }
 #cw20 = "2.0.0"
-cw20            = { path = "../cw-plus/packages/cw20" }
+cw20 = { git = "https://github.com/permissionlessweb/cw-plus", branch = "main" }
 #cw20-base = { version = "2.0.0", package = "cw20-base", features = ["library"] }
-cw20-base       = { path = "../cw-plus/contracts/cw20-base" }
-cw-controllers = { path = "../cw-minus/packages/controllers" }
-cw-multi-test = { version = "3", features = ["staking"] }
+cw20-base = { git = "https://github.com/permissionlessweb/cw-plus", branch = "main" }
+cw-controllers = { git = "https://github.com/permissionlessweb/cw-minus", branch = "main" }
+cw-multi-test = { git = "https://github.com/permissionlessweb/cw-multi-test", branch = "mvp" }
 #cw-placeholder = { version = "3.0", git = "https://github.com/cosmorama/wynddex.git", tag = "v2.0.2", features = ["library"] }
 cw-placeholder = { path = "../wynddex/contracts/cw-placeholder",features = ["library"] }
 
-cw-storage-plus = "3.0.1"
-cw-utils = { path = "../cw-minus/packages/cw-utils" }
+cw-storage-plus = { git = "https://github.com/permissionlessweb/cw-storage-plus", branch = "mvp" }
+cw-utils = { git = "https://github.com/permissionlessweb/cw-minus", branch = "main" }
 semver = "1"
 serde = { version = "1", default-features = false, features = ["derive"] }
 thiserror = "1"
