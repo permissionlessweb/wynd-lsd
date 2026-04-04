@@ -9,8 +9,8 @@ repository = "https://github.com/cosmorama/wynd-lsd"
 
 [workspace.dependencies]
 anyhow = "1"
-cosmwasm-schema = "3.0"
-cosmwasm-std = { version = "3.0", features = ["staking"] }
+cosmwasm-schema = "3.0.4"
+cosmwasm-std = { version = "3.0.4", features = ["staking"] }
 cw2 = { path = "../cw-minus/packages/cw2" }
 #cw20 = "2.0.0"
 cw20            = { path = "../cw-plus/packages/cw20" }
@@ -21,7 +21,7 @@ cw-multi-test = { version = "3", features = ["staking"] }
 #cw-placeholder = { version = "3.0", git = "https://github.com/cosmorama/wynddex.git", tag = "v2.0.2", features = ["library"] }
 cw-placeholder = { path = "../wynddex/contracts/cw-placeholder",features = ["library"] }
 
-cw-storage-plus = "3.0"
+cw-storage-plus = "3.0.1"
 cw-utils = { path = "../cw-minus/packages/cw-utils" }
 semver = "1"
 serde = { version = "1", default-features = false, features = ["derive"] }
