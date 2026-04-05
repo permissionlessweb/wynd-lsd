@@ -1,7 +1,9 @@
 use anyhow::Result as AnyResult;
 
 use cosmwasm_std::{
-    coin, coins, testing::mock_env, to_json_binary, Addr, Coin, Decimal, Uint128, Validator,
+    coin, coins,
+    testing::{mock_env, MockApi},
+    to_json_binary, Addr, Coin, Decimal, StdResult, Uint256, Validator,
 };
 use cw20::{BalanceResponse, Cw20Coin, Cw20ExecuteMsg, Cw20QueryMsg};
 use cw_multi_test::{App, AppResponse, ContractWrapper, Executor, StakingInfo};
@@ -106,13 +108,12 @@ impl SuiteBuilder {
         }
     }
 
-    pub fn with_funds(mut self, addr: &str, funds: (u128, &str)) -> Self {
-        self.funds
-            .push((Addr::unchecked(addr), coins(funds.0, funds.1)));
+    pub fn with_funds(mut self, addr: &Addr, funds: (u128, &str)) -> Self {
+        self.funds.push((addr.clone(), coins(funds.0, funds.1)));
         self
     }
 
-    pub fn with_lsd_funds(mut self, addr: &str, amount: u128) -> Self {
+    pub fn with_lsd_funds(mut self, addr: &Addr, amount: u128) -> Self {
         self.lsd_funds.push(Cw20Coin {
             address: addr.into(),
             amount: amount.into(),
@@ -123,10 +124,10 @@ impl SuiteBuilder {
     #[track_caller]
     pub fn build(self) -> Suite {
         let mut app = App::default();
-        let owner = Addr::unchecked("owner");
+        let owner = MockApi::default().addr_make("owner");
 
         let funds = self.funds;
-        app.init_modules(|router, api, storage| -> AnyResult<()> {
+        app.init_modules(|router, api, storage| -> StdResult<()> {
             router.staking.setup(
                 storage,
                 StakingInfo {
@@ -138,12 +139,14 @@ impl SuiteBuilder {
                 api,
                 storage,
                 &mock_env().block,
-                Validator {
-                    address: "junovaloper196ax4vc0lwpxndu9dyhvca7jhxp70rmcqcnylw".to_owned(),
-                    commission: Decimal::percent(5),
-                    max_commission: Decimal::one(),
-                    max_change_rate: Decimal::one(),
-                },
+                Validator::create(
+                    MockApi::default()
+                        .addr_make("junovaloper196ax4vc0lwpxndu9dyhvca7jhxp70rmcqcnylw")
+                        .to_string(),
+                    Decimal::percent(5),
+                    Decimal::one(),
+                    Decimal::one(),
+                ),
             )?;
 
             for (addr, coin) in funds {
@@ -175,13 +178,14 @@ impl SuiteBuilder {
                     token_code_id: cw20_code_id,
                     fee_address: None,
                     owner: owner.to_string(),
-                    max_referral_commission: Decimal::percent(10),
+                    max_referral_commission: Decimal::percent(10).into(),
                     default_stake_config: DefaultStakeConfig {
                         staking_code_id,
-                        tokens_per_power: Uint128::one(),
-                        min_bond: Uint128::one(),
+                        tokens_per_power: Uint256::one(),
+                        min_bond: Uint256::one(),
                         unbonding_periods: vec![3600],
                         max_distributions: 1,
+                        converter: None,
                     },
                     trading_starts: None,
                 },
@@ -198,11 +202,13 @@ impl SuiteBuilder {
                 lsd_hub_code_id,
                 owner.clone(),
                 &HubInstantiateMsg {
-                    treasury: "treasury".to_string(),
+                    treasury: MockApi::default().addr_make("treasury").to_string(),
                     owner: owner.to_string(),
                     commission: Decimal::percent(9),
                     validators: vec![(
-                        "junovaloper196ax4vc0lwpxndu9dyhvca7jhxp70rmcqcnylw".to_string(),
+                        MockApi::default()
+                            .addr_make("junovaloper196ax4vc0lwpxndu9dyhvca7jhxp70rmcqcnylw")
+                            .to_string(),
                         Decimal::one(),
                     )],
                     cw20_init: TokenInitInfo {
@@ -320,9 +326,9 @@ impl Suite {
         });
     }
 
-    pub fn bond(&mut self, sender: &str, funds: (u128, &str)) -> AnyResult<AppResponse> {
+    pub fn bond(&mut self, sender: &Addr, funds: (u128, &str)) -> StdResult<AppResponse> {
         self.app.execute_contract(
-            Addr::unchecked(sender),
+            sender.clone(),
             self.bond_router.clone(),
             &ExecuteMsg::Bond {},
             &[coin(funds.0, funds.1)],
@@ -331,16 +337,16 @@ impl Suite {
 
     pub fn increase_allowance(
         &mut self,
-        owner: &str,
+        owner: &Addr,
         contract: &Addr,
-        spender: &str,
+        spender: &Addr,
         amount: u128,
-    ) -> AnyResult<AppResponse> {
+    ) -> StdResult<AppResponse> {
         self.app.execute_contract(
-            Addr::unchecked(owner),
+            owner.clone(),
             contract.clone(),
             &Cw20ExecuteMsg::IncreaseAllowance {
-                spender: spender.to_owned(),
+                spender: spender.to_string(),
                 amount: amount.into(),
                 expires: None,
             },
@@ -350,11 +356,11 @@ impl Suite {
 
     pub fn provide_liquidity(
         &mut self,
-        owner: &str,
+        owner: &Addr,
         pair: &Addr,
         assets: &[Asset],
         send_funds: &[Coin],
-    ) -> AnyResult<AppResponse> {
+    ) -> StdResult<AppResponse> {
         self.app.execute_contract(
             Addr::unchecked(owner),
             pair.clone(),
@@ -368,7 +374,7 @@ impl Suite {
     }
 
     // simulate bond tx query in bond router contract
-    pub fn query_simulate(&self, bond: u128) -> AnyResult<u128> {
+    pub fn query_simulate(&self, bond: u128) -> StdResult<Uint256> {
         Ok(self
             .app
             .wrap()
@@ -376,11 +382,10 @@ impl Suite {
                 self.bond_router.clone(),
                 &QueryMsg::Simulate { bond: bond.into() },
             )?
-            .lsd_val
-            .into())
+            .lsd_val)
     }
 
-    pub fn query_exchange_rate(&self) -> AnyResult<Decimal> {
+    pub fn query_exchange_rate(&self) -> StdResult<Decimal> {
         Ok(self
             .app
             .wrap()
@@ -391,7 +396,7 @@ impl Suite {
             .exchange_rate)
     }
 
-    pub fn query_lsd_supply(&self) -> AnyResult<Supply> {
+    pub fn query_lsd_supply(&self) -> StdResult<Supply> {
         Ok(self
             .app
             .wrap()
@@ -399,7 +404,7 @@ impl Suite {
             .supply)
     }
 
-    pub fn query_spot_price(&self) -> AnyResult<Decimal> {
+    pub fn query_spot_price(&self) -> StdResult<cosmwasm_std::Decimal256> {
         Ok(self
             .app
             .wrap()
@@ -413,14 +418,14 @@ impl Suite {
             .price)
     }
 
-    pub fn query_cw20_balance(&self, sender: &str, address: &Addr) -> AnyResult<u128> {
+    pub fn query_cw20_balance(&self, sender: &Addr, address: &Addr) -> StdResult<Uint256> {
         Ok(self
             .app
             .wrap()
             .query_wasm_smart::<BalanceResponse>(
                 address,
                 &Cw20QueryMsg::Balance {
-                    address: sender.to_owned(),
+                    address: sender.to_string(),
                 },
             )?
             .balance

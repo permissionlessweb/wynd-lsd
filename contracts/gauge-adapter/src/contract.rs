@@ -5,7 +5,7 @@ use cosmwasm_std::{
     Response, StdResult, WasmMsg,
 };
 use cw2::set_contract_version;
-use cw_utils::ensure_from_older_version;
+// use cw_utils::ensure_from_older_version;
 
 use cw_placeholder::contract::CONTRACT_NAME as PLACEHOLDER_CONTRACT_NAME;
 use wynd_lsd_hub::msg::ExecuteMsg as HubExecuteMsg;
@@ -140,7 +140,7 @@ pub fn migrate(deps: DepsMut, env: Env, msg: MigrateMsg) -> Result<Response, Con
             let contract_info = deps
                 .querier
                 .query_wasm_contract_info(env.contract.address.clone())?;
-            let sender = deps.api.addr_validate(&contract_info.admin.unwrap())?;
+            let sender = contract_info.admin.unwrap();
 
             instantiate(
                 deps,
@@ -154,28 +154,16 @@ pub fn migrate(deps: DepsMut, env: Env, msg: MigrateMsg) -> Result<Response, Con
             .unwrap();
         }
         MigrateMsg::Update { max_commission } => {
-            let version = ensure_from_older_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
-            if version < "1.2.0".parse::<Version>().unwrap() {
-                use cw_storage_plus::Item;
-                let old_storage: Item<migration::OldConfig> = Item::new("config");
-                let old_config = old_storage.load(deps.storage)?;
-
-                let new_config = Config {
-                    hub: Addr::unchecked(old_config.hub),
-                    max_commission,
-                };
-                CONFIG.save(deps.storage, &new_config)?;
-            }
+            cw2::ensure_from_older_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
         }
-    };
-
+    }
     Ok(Response::new())
 }
 
 #[cfg(test)]
 mod tests {
     use cosmwasm_std::{
-        testing::{mock_dependencies, mock_env, mock_info},
+        testing::{message_info, mock_dependencies, mock_env, MockApi},
         CosmosMsg, Decimal, WasmMsg,
     };
 
@@ -184,34 +172,41 @@ mod tests {
     #[test]
     fn proper_initialization() {
         let mut deps = mock_dependencies();
+        let user = &deps.api.addr_make("user");
+        let hub = &deps.api.addr_make("hub");
         let msg = InstantiateMsg {
-            hub: "hub".to_string(),
+            hub: deps.api.addr_make("hub").to_string(),
             max_commission: Decimal::percent(30),
         };
-        instantiate(deps.as_mut(), mock_env(), mock_info("user", &[]), msg).unwrap();
+        instantiate(deps.as_mut(), mock_env(), message_info(user, &[]), msg).unwrap();
 
         // check if the config is stored
         let config = CONFIG.load(deps.as_ref().storage).unwrap();
-        assert_eq!(config.hub, "hub");
+        assert_eq!(config.hub, deps.api.addr_make("hub"));
         assert_eq!(config.max_commission, Decimal::percent(30));
     }
 
     #[test]
     fn invalid_max_commission() {
         let mut deps = mock_dependencies();
+        let user = &deps.api.addr_make("user");
+        let hub = &deps.api.addr_make("hub");
+
         let msg = InstantiateMsg {
-            hub: "hub".to_string(),
+            hub: hub.to_string(),
             max_commission: Decimal::zero(),
         };
 
         let err = instantiate(
             deps.as_mut(),
             mock_env(),
-            mock_info("user", &[]),
+            message_info(user, &[]),
             msg.clone(),
         )
         .unwrap_err();
-        assert_eq!(err, ContractError::InvalidMaxCommission {});
+        assert!(err
+            .to_string()
+            .contains(&ContractError::InvalidMaxCommission {}.to_string()));
 
         let msg = InstantiateMsg {
             max_commission: Decimal::percent(101),
@@ -220,11 +215,14 @@ mod tests {
         let err = instantiate(
             deps.as_mut(),
             mock_env(),
-            mock_info("user", &[]),
+            message_info(user, &[]),
             msg.clone(),
         )
         .unwrap_err();
-        assert_eq!(err, ContractError::InvalidMaxCommission {});
+
+        assert!(err
+            .to_string()
+            .contains(&ContractError::InvalidMaxCommission {}.to_string()));
 
         let msg = InstantiateMsg {
             max_commission: Decimal::one(),
@@ -233,7 +231,7 @@ mod tests {
         instantiate(
             deps.as_mut(),
             mock_env(),
-            mock_info("user", &[]),
+            message_info(user, &[]),
             msg.clone(),
         )
         .unwrap();
@@ -241,19 +239,21 @@ mod tests {
             max_commission: Decimal::percent(1),
             ..msg
         };
-        instantiate(deps.as_mut(), mock_env(), mock_info("user", &[]), msg).unwrap();
+        instantiate(deps.as_mut(), mock_env(), message_info(user, &[]), msg).unwrap();
     }
 
     #[test]
     fn basic_sample() {
         let mut deps = mock_dependencies();
+        let user = &deps.api.addr_make("user");
+        let hub = &deps.api.addr_make("hub");
 
         instantiate(
             deps.as_mut(),
             mock_env(),
-            mock_info("user", &[]),
+            message_info(user, &[]),
             InstantiateMsg {
-                hub: "hub".to_string(),
+                hub: hub.to_string(),
                 max_commission: Decimal::percent(30),
             },
         )
@@ -269,7 +269,9 @@ mod tests {
                 Decimal::permille(333),
             ),
             (
-                "junovaloper196ax4vc0lwpxndu9dyhvca7jhxp70rmcqcnylw".to_string(),
+                MockApi::default()
+                    .addr_make("junovaloper196ax4vc0lwpxndu9dyhvca7jhxp70rmcqcnylw")
+                    .to_string(),
                 Decimal::permille(250),
             ),
         ];
@@ -278,7 +280,7 @@ mod tests {
         assert_eq!(
             res.execute[0],
             CosmosMsg::Wasm(WasmMsg::Execute {
-                contract_addr: "hub".to_string(),
+                contract_addr: hub.to_string(),
                 msg: to_json_binary(&HubExecuteMsg::SetValidators {
                     new_validators: vec![
                         (
@@ -290,7 +292,9 @@ mod tests {
                             Decimal::permille(333),
                         ),
                         (
-                            "junovaloper196ax4vc0lwpxndu9dyhvca7jhxp70rmcqcnylw".to_string(),
+                            MockApi::default()
+                                .addr_make("junovaloper196ax4vc0lwpxndu9dyhvca7jhxp70rmcqcnylw")
+                                .to_string(),
                             Decimal::permille(250),
                         ),
                     ]

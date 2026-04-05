@@ -1,5 +1,5 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::Uint128;
+use cosmwasm_std::{Uint128, Uint256};
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -49,5 +49,5 @@ impl From<crate::state::Config> for ConfigResponse {
 
 #[cw_serde]
 pub struct SimulateResponse {
-    pub lsd_val: Uint128,
+    pub lsd_val: Uint256,
 }

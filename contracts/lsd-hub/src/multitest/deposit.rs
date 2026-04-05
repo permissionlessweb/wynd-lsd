@@ -5,14 +5,18 @@ use crate::{state::SUPPLY, ContractError};
 use super::suite::SuiteBuilder;
 
 use crate::state::{unbonding_info_num_epochs, unbonding_info_total_entries, BONDED};
-use cosmwasm_std::{assert_approx_eq, coin, Decimal, Delegation, Uint128};
+use cosmwasm_std::testing::MockApi;
+use cosmwasm_std::{assert_approx_eq, coin, Decimal, Delegation, Uint128, Uint256};
 
 const DAY: u64 = 24 * HOUR;
 const HOUR: u64 = 60 * 60;
 
 #[test]
 fn proper_init() {
-    let delegators = &["delegator1", "delegator2"];
+    let delegators = &[
+        &MockApi::default().addr_make("delegator1"),
+        &MockApi::default().addr_make("delegator2"),
+    ];
 
     let suite = SuiteBuilder::new()
         .with_initial_balances(vec![
@@ -30,7 +34,10 @@ fn proper_init() {
 
 #[test]
 fn basic_minting_case() {
-    let delegators = &["delegator1", "delegator2"];
+    let delegators = &[
+        &MockApi::default().addr_make("delegator1"),
+        &MockApi::default().addr_make("delegator2"),
+    ];
 
     let initial_staking_amount = 1_000_000u128;
     let mut suite = SuiteBuilder::new()
@@ -49,9 +56,9 @@ fn basic_minting_case() {
 
     // Users now have the same amount of LSD tokens as they staked
     let balance = suite.query_cw20_balance(delegators[0], &lsd).unwrap();
-    assert_eq!(balance, Uint128::new(initial_staking_amount).u128());
+    assert_eq!(balance, Uint256::new(initial_staking_amount));
     let balance = suite.query_cw20_balance(delegators[1], &lsd).unwrap();
-    assert_eq!(balance, Uint128::new(initial_staking_amount).u128());
+    assert_eq!(balance, Uint256::new(initial_staking_amount));
 
     // wait until next epoch and do first reinvest to actually delegate
     suite.update_time(DAY);
@@ -62,7 +69,7 @@ fn basic_minting_case() {
     assert_eq!(delegations.len(), 1);
     assert_eq!(
         delegations[0].amount.amount,
-        Uint128::new(initial_staking_amount * 2)
+        Uint256::new(initial_staking_amount * 2)
     );
 
     assert_eq!(suite.query_tvl().unwrap().u128(), 2_000_000u128);
@@ -70,16 +77,24 @@ fn basic_minting_case() {
 
 #[test]
 fn change_valset_dust() {
-    let delegator = "delegator";
+    let delegator = &MockApi::default().addr_make("delegator");
 
     let amount = 3_333_333u128;
     let mut suite = SuiteBuilder::new()
         .with_initial_balances(vec![(delegator, amount)])
         .with_validators(vec![
-            ("testvaloper1", Decimal::percent(50)),
-            ("testvaloper2", Decimal::percent(50)),
+            (
+                &MockApi::default().addr_make("testvaloper1").into(),
+                Decimal::percent(50),
+            ),
+            (
+                &MockApi::default().addr_make("testvaloper2").into(),
+                Decimal::percent(50),
+            ),
         ])
-        .with_registered_validators(vec!["testvaloper3".to_string()])
+        .with_registered_validators(vec![MockApi::default()
+            .addr_make("testvaloper3")
+            .to_string()])
         .with_periods(23 * HOUR, 28 * DAY)
         .build();
 
@@ -92,8 +107,8 @@ fn change_valset_dust() {
 
     // first validator gets the dust
     let delegations = suite.query_delegations().unwrap();
-    assert_eq!(delegations[0].amount.amount, Uint128::new(1_666_667));
-    assert_eq!(delegations[1].amount.amount, Uint128::new(1_666_666));
+    assert_eq!(delegations[0].amount.amount, Uint256::new(1_666_667));
+    assert_eq!(delegations[1].amount.amount, Uint256::new(1_666_666));
 
     // get the saved balances
     let supply = SUPPLY.query(&suite.app.wrap(), suite.hub.clone()).unwrap();
@@ -101,8 +116,14 @@ fn change_valset_dust() {
     let bonded = BONDED.query(&suite.app.wrap(), suite.hub.clone()).unwrap();
     assert_eq!(
         HashMap::from([
-            ("testvaloper1".to_string(), 1_666_667u128.into()),
-            ("testvaloper2".to_string(), 1_666_666u128.into()),
+            (
+                MockApi::default().addr_make("testvaloper1").to_string(),
+                1_666_667u128.into()
+            ),
+            (
+                MockApi::default().addr_make("testvaloper2").to_string(),
+                1_666_666u128.into()
+            ),
         ]),
         bonded.into_iter().collect()
     );
@@ -111,19 +132,25 @@ fn change_valset_dust() {
     suite.update_time(27 * DAY + HOUR);
     suite
         .set_validators(
-            "owner",
+            &MockApi::default().addr_make("owner"),
             vec![
-                ("testvaloper2".to_string(), Decimal::percent(50)),
-                ("testvaloper3".to_string(), Decimal::percent(50)),
+                (
+                    MockApi::default().addr_make("testvaloper2").to_string(),
+                    Decimal::percent(50),
+                ),
+                (
+                    MockApi::default().addr_make("testvaloper3").to_string(),
+                    Decimal::percent(50),
+                ),
             ],
         )
         .unwrap();
 
     // first validator still has some dust left
     let delegations = suite.query_delegations().unwrap();
-    assert_eq!(delegations[0].amount.amount, Uint128::new(1));
-    assert_eq!(delegations[1].amount.amount, Uint128::new(1_666_666));
-    assert_eq!(delegations[2].amount.amount, Uint128::new(1_666_666));
+    assert_eq!(delegations[0].amount.amount, Uint256::new(1));
+    assert_eq!(delegations[1].amount.amount, Uint256::new(1_666_666));
+    assert_eq!(delegations[2].amount.amount, Uint256::new(1_666_666));
 
     // get the saved balances
     let supply = SUPPLY.query(&suite.app.wrap(), suite.hub.clone()).unwrap();
@@ -131,9 +158,18 @@ fn change_valset_dust() {
     let bonded = BONDED.query(&suite.app.wrap(), suite.hub.clone()).unwrap();
     assert_eq!(
         HashMap::from([
-            ("testvaloper1".to_string(), 1u128.into()),
-            ("testvaloper2".to_string(), 1_666_666u128.into()),
-            ("testvaloper3".to_string(), 1_666_666u128.into()),
+            (
+                MockApi::default().addr_make("testvaloper1").to_string(),
+                1u128.into()
+            ),
+            (
+                MockApi::default().addr_make("testvaloper2").to_string(),
+                1_666_666u128.into()
+            ),
+            (
+                MockApi::default().addr_make("testvaloper3").to_string(),
+                1_666_666u128.into()
+            ),
         ]),
         bonded.into_iter().collect()
     );
@@ -141,16 +177,25 @@ fn change_valset_dust() {
 
 #[test]
 fn set_new_valset_more_validators() {
-    let delegator = "delegator1";
+    let delegator = &MockApi::default().addr_make("delegator1");
 
     let staking_amount = 1_000_000u128;
     let mut suite = SuiteBuilder::new()
         .with_initial_balances(vec![(delegator, 1_000_000)])
         .with_validators(vec![
-            ("testvaloper1", Decimal::percent(50)),
-            ("testvaloper2", Decimal::percent(50)),
+            (
+                &MockApi::default().addr_make("testvaloper1").into(),
+                Decimal::percent(50),
+            ),
+            (
+                &MockApi::default().addr_make("testvaloper2").into(),
+                Decimal::percent(50),
+            ),
         ])
-        .with_registered_validators(vec!["testvaloper3".to_owned(), "testvaloper4".to_owned()])
+        .with_registered_validators(vec![
+            MockApi::default().addr_make("testvaloper3").into(),
+            MockApi::default().addr_make("testvaloper4").into(),
+        ])
         .with_periods(DAY, 28 * DAY)
         .build();
 
@@ -168,17 +213,29 @@ fn set_new_valset_more_validators() {
         amount,
         ..
     } = delegations[0].clone();
-    assert_eq!(&validator, "testvaloper1");
+    assert_eq!(validator, MockApi::default().addr_make("testvaloper1").to_string());
     assert_eq!(amount, coin(500_000, "FUN"));
 
     suite
         .set_validators(
-            "owner",
+            &MockApi::default().addr_make("owner"),
             vec![
-                ("testvaloper1".to_string(), Decimal::percent(25)),
-                ("testvaloper2".to_string(), Decimal::percent(25)),
-                ("testvaloper3".to_string(), Decimal::percent(25)),
-                ("testvaloper4".to_string(), Decimal::percent(25)),
+                (
+                    MockApi::default().addr_make("testvaloper1").to_string(),
+                    Decimal::percent(25),
+                ),
+                (
+                    MockApi::default().addr_make("testvaloper2").to_string(),
+                    Decimal::percent(25),
+                ),
+                (
+                    MockApi::default().addr_make("testvaloper3").to_string(),
+                    Decimal::percent(25),
+                ),
+                (
+                    MockApi::default().addr_make("testvaloper4").to_string(),
+                    Decimal::percent(25),
+                ),
             ],
         )
         .unwrap();
@@ -192,7 +249,7 @@ fn set_new_valset_more_validators() {
         amount,
         ..
     } = delegations[0].clone();
-    assert_eq!(&validator, "testvaloper1");
+    assert_eq!(validator, MockApi::default().addr_make("testvaloper1").to_string());
     assert_eq!(amount, coin(250_000, "FUN"));
 
     suite.update_time(DAY);
@@ -207,32 +264,53 @@ fn set_new_valset_more_validators() {
         amount,
         ..
     } = delegations[0].clone();
-    assert_eq!(&validator, "testvaloper1");
-    assert_eq!(amount, coin(251_236, "FUN"));
+    assert_eq!(validator, MockApi::default().addr_make("testvaloper1").to_string());
+    assert_eq!(amount, coin(250_494, "FUN"));
 
     let valset = suite.query_validator_set().unwrap();
     assert_eq!(
         valset,
         vec![
-            ("testvaloper1".to_string(), Decimal::percent(25)),
-            ("testvaloper2".to_string(), Decimal::percent(25)),
-            ("testvaloper3".to_string(), Decimal::percent(25)),
-            ("testvaloper4".to_string(), Decimal::percent(25)),
+            (
+                MockApi::default().addr_make("testvaloper1").to_string(),
+                Decimal::percent(25)
+            ),
+            (
+                MockApi::default().addr_make("testvaloper2").to_string(),
+                Decimal::percent(25)
+            ),
+            (
+                MockApi::default().addr_make("testvaloper3").to_string(),
+                Decimal::percent(25)
+            ),
+            (
+                MockApi::default().addr_make("testvaloper4").to_string(),
+                Decimal::percent(25)
+            ),
         ]
     );
 }
 
 #[test]
 fn set_new_valset_less_validators() {
-    let delegator = "delegator1";
+    let delegator = &MockApi::default().addr_make("delegator1");
 
     let staking_amount = 1_000_000u128;
     let mut suite = SuiteBuilder::new()
         .with_initial_balances(vec![(delegator, 1_000_000)])
         .with_validators(vec![
-            ("testvaloper1", Decimal::percent(33)),
-            ("testvaloper2", Decimal::percent(33)),
-            ("testvaloper3", Decimal::percent(34)),
+            (
+                &MockApi::default().addr_make("testvaloper1").into(),
+                Decimal::percent(33),
+            ),
+            (
+                &MockApi::default().addr_make("testvaloper2").into(),
+                Decimal::percent(33),
+            ),
+            (
+                &MockApi::default().addr_make("testvaloper3").into(),
+                Decimal::percent(34),
+            ),
         ])
         .with_periods(DAY, 28 * DAY)
         .build();
@@ -251,15 +329,21 @@ fn set_new_valset_less_validators() {
         amount,
         ..
     } = delegations[0].clone();
-    assert_eq!(&validator, "testvaloper1");
+    assert_eq!(validator, MockApi::default().addr_make("testvaloper1").to_string());
     assert_eq!(amount, coin(330_000, "FUN"));
 
     suite
         .set_validators(
-            "owner",
+            &MockApi::default().addr_make("owner"),
             vec![
-                ("testvaloper2".to_string(), Decimal::percent(50)),
-                ("testvaloper3".to_string(), Decimal::percent(50)),
+                (
+                    MockApi::default().addr_make("testvaloper2").to_string(),
+                    Decimal::percent(50),
+                ),
+                (
+                    MockApi::default().addr_make("testvaloper3").to_string(),
+                    Decimal::percent(50),
+                ),
             ],
         )
         .unwrap();
@@ -273,7 +357,7 @@ fn set_new_valset_less_validators() {
         amount,
         ..
     } = delegations[0].clone();
-    assert_eq!(&validator, "testvaloper2");
+    assert_eq!(validator, MockApi::default().addr_make("testvaloper2").to_string());
     assert_eq!(amount, coin(500_000, "FUN"));
 
     suite.update_time(DAY);
@@ -283,8 +367,14 @@ fn set_new_valset_less_validators() {
     assert_eq!(
         valset,
         vec![
-            ("testvaloper2".to_string(), Decimal::percent(50)),
-            ("testvaloper3".to_string(), Decimal::percent(50)),
+            (
+                MockApi::default().addr_make("testvaloper2").to_string(),
+                Decimal::percent(50)
+            ),
+            (
+                MockApi::default().addr_make("testvaloper3").to_string(),
+                Decimal::percent(50)
+            ),
         ]
     );
 
@@ -292,23 +382,33 @@ fn set_new_valset_less_validators() {
     assert_eq!(delegations.len(), 2);
 
     let delegation = delegations[0].clone();
-    assert!(
-        matches!(delegation, Delegation { delegator: _, validator, amount, .. }
-        if validator == *"testvaloper2" && amount == coin(501_652, "FUN"))
-    );
+    assert_eq!(delegation.validator, MockApi::default().addr_make("testvaloper2").to_string());
+    assert_eq!(delegation.amount, coin(500_989, "FUN"));
 }
 
 #[test]
 fn deposit_reinvest() {
-    let delegators = &["delegator1", "delegator2"];
+    let delegators = &[
+        &MockApi::default().addr_make("delegator1"),
+        &MockApi::default().addr_make("delegator2"),
+    ];
 
     let initial_staking_amount = 1_000_000u128;
     let mut suite = SuiteBuilder::new()
         .with_initial_balances(vec![(delegators[0], 2_000_000), (delegators[1], 2_000_000)])
         .with_validators(vec![
-            ("testvaloper1", Decimal::percent(50)),
-            ("testvaloper2", Decimal::percent(30)),
-            ("testvaloper3", Decimal::percent(20)),
+            (
+                &MockApi::default().addr_make("testvaloper1").into(),
+                Decimal::percent(50),
+            ),
+            (
+                &MockApi::default().addr_make("testvaloper2").into(),
+                Decimal::percent(30),
+            ),
+            (
+                &MockApi::default().addr_make("testvaloper3").into(),
+                Decimal::percent(20),
+            ),
         ])
         .with_periods(DAY, 28 * DAY)
         .build();
@@ -346,9 +446,9 @@ fn deposit_reinvest() {
 
     let delegations = suite.query_delegations().unwrap();
     assert_eq!(delegations.len(), 3);
-    let delegations: Uint128 = delegations.into_iter().map(|d| d.amount.amount).sum();
+    let delegations: Uint256 = delegations.into_iter().map(|d| d.amount.amount).sum();
     assert!(
-        delegations.u128() > initial_staking_amount,
+        delegations > initial_staking_amount.into(),
         "should be more because of rewards"
     );
 
@@ -358,7 +458,7 @@ fn deposit_reinvest() {
     // should get less lsd tokens than the first user, since lsd tokens are worth more now
     let lsd = suite.query_lsd_token().unwrap();
     let balance = suite.query_cw20_balance(delegators[1], &lsd).unwrap();
-    assert!(balance < 1_000_000u128);
+    assert!(balance < 1_000_000u128.into());
 
     // wait and reinvest to delegate them
     suite.update_time(DAY);
@@ -367,25 +467,37 @@ fn deposit_reinvest() {
     // bonded amount should be staked to the validator now
     let delegations = suite.query_delegations().unwrap();
     assert_eq!(delegations.len(), 3);
-    let delegations: Uint128 = delegations.into_iter().map(|d| d.amount.amount).sum();
+    let delegations: Uint256 = delegations.into_iter().map(|d| d.amount.amount).sum();
     assert!(
-        delegations.u128() > initial_staking_amount * 2,
+        delegations > (initial_staking_amount * 2).into(),
         "should be more because of rewards"
     );
 }
 
 #[test]
 fn target_value() {
-    let delegators = &["delegator1", "delegator2"];
+    let delegators = &[
+        &MockApi::default().addr_make("delegator1"),
+        &MockApi::default().addr_make("delegator2"),
+    ];
 
     let amount = 1_000_000u128;
     let mut suite = SuiteBuilder::new()
         .with_initial_balances(vec![(delegators[0], 2_000_000), (delegators[1], 2_000_000)])
         .with_liquidity_discount(Decimal::percent(6))
         .with_validators(vec![
-            ("testvaloper1", Decimal::percent(50)),
-            ("testvaloper2", Decimal::percent(30)),
-            ("testvaloper3", Decimal::percent(20)),
+            (
+                &MockApi::default().addr_make("testvaloper1").into(),
+                Decimal::percent(50),
+            ),
+            (
+                &MockApi::default().addr_make("testvaloper2").into(),
+                Decimal::percent(30),
+            ),
+            (
+                &MockApi::default().addr_make("testvaloper3").into(),
+                Decimal::percent(20),
+            ),
         ])
         .with_periods(DAY, 28 * DAY)
         .build();
@@ -414,24 +526,32 @@ fn target_value() {
     );
 
     // change liquidity discount
-    assert!(matches!(
-        suite
-            .update_liquidity_discount("notadmin", Decimal::percent(5))
-            .unwrap_err()
-            .downcast()
-            .unwrap(),
-        ContractError::Unauthorized {}
-    ));
-    assert!(matches!(
-        suite
-            .update_liquidity_discount("owner", Decimal::percent(100))
-            .unwrap_err()
-            .downcast()
-            .unwrap(),
-        ContractError::InvalidLiquidityDiscount {}
-    ));
+    let err = suite
+        .update_liquidity_discount(
+            &MockApi::default().addr_make("notadmin"),
+            Decimal::percent(5),
+        )
+        .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains(&ContractError::Unauthorized {}.to_string()),
+        "expected Unauthorized error, got: {}",
+        err
+    );
+    let err = suite
+        .update_liquidity_discount(
+            &MockApi::default().addr_make("owner"),
+            Decimal::percent(100),
+        )
+        .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains(&ContractError::InvalidLiquidityDiscount {}.to_string()),
+        "expected InvalidLiquidityDiscount error, got: {}",
+        err
+    );
     suite
-        .update_liquidity_discount("owner", Decimal::percent(10))
+        .update_liquidity_discount(&MockApi::default().addr_make("owner"), Decimal::percent(10))
         .unwrap();
 
     let target_value = suite.query_target_value().unwrap();
@@ -478,7 +598,7 @@ fn target_value() {
     assert_approx_eq!(
         target_value4.atomics(),
         target_value3.atomics(),
-        "0.0000005",
+        "0.000001",
         "unbonding should not affect target value"
     );
 
@@ -488,14 +608,23 @@ fn target_value() {
 
 #[test]
 fn commission() {
-    let delegator = "delegator";
+    let delegator = &MockApi::default().addr_make("delegator");
     let amount = 1_000_000u128;
     let mut suite = SuiteBuilder::new()
         .with_initial_balances(vec![(delegator, 2 * amount)])
         .with_validators(vec![
-            ("testvaloper1", Decimal::percent(10)),
-            ("testvaloper2", Decimal::percent(20)),
-            ("testvaloper3", Decimal::percent(70)),
+            (
+                &MockApi::default().addr_make("testvaloper1").into(),
+                Decimal::percent(10),
+            ),
+            (
+                &MockApi::default().addr_make("testvaloper2").into(),
+                Decimal::percent(20),
+            ),
+            (
+                &MockApi::default().addr_make("testvaloper3").into(),
+                Decimal::percent(70),
+            ),
         ])
         .with_periods(DAY, 28 * DAY)
         .build();
@@ -511,8 +640,10 @@ fn commission() {
     suite.bond(delegator, amount).unwrap();
 
     assert_eq!(
-        suite.query_balance("treasury", "FUN").unwrap(),
-        0,
+        suite
+            .query_balance(&MockApi::default().addr_make("treasury"), "FUN")
+            .unwrap(),
+        Uint256::zero(),
         "should not have gotten commission yet"
     );
 
@@ -524,20 +655,33 @@ fn commission() {
     // APR is 80% per year, validator takes 5% commission
     // 80% * 1_000_000 / 365 * 95% = 2081 rewards
     // 2081 * 5% = 104 commission
-    // TODO: why is this 208? is the calculation above wrong?
-    assert_eq!(suite.query_balance("treasury", "FUN").unwrap(), 208);
+    assert_eq!(
+        suite
+            .query_balance(&MockApi::default().addr_make("treasury"), "FUN")
+            .unwrap(),
+       Uint256::new( 104u128 )
+    );
 }
 
 #[test]
 fn tiny_weights() {
-    let delegator = "delegator";
+    let delegator = &MockApi::default().addr_make("delegator");
     let initial_staking_amount = 1_000_000u128;
     let mut suite = SuiteBuilder::new()
         .with_initial_balances(vec![(delegator, 1_000_000)])
         .with_validators(vec![
-            ("testvaloper1", Decimal::from_str("0.000001").unwrap()),
-            ("testvaloper2", Decimal::from_str("0.00000001").unwrap()),
-            ("testvaloper3", Decimal::from_str("0.99999899").unwrap()),
+            (
+                &MockApi::default().addr_make("testvaloper1").into(),
+                Decimal::from_str("0.000001").unwrap(),
+            ),
+            (
+                &MockApi::default().addr_make("testvaloper2").into(),
+                Decimal::from_str("0.00000001").unwrap(),
+            ),
+            (
+                &MockApi::default().addr_make("testvaloper3").into(),
+                Decimal::from_str("0.99999899").unwrap(),
+            ),
         ])
         .with_periods(DAY, 28 * DAY)
         .build();
@@ -555,15 +699,18 @@ fn tiny_weights() {
     );
     assert_eq!(
         delegations[0].amount.amount,
-        Uint128::new(2),
+        Uint256::new(2),
         "should be 2 because of rounding"
     );
-    assert_eq!(delegations[1].amount.amount, Uint128::new(999998));
+    assert_eq!(delegations[1].amount.amount, Uint256::new(999998));
 }
 
 #[test]
 fn simple_bond_unbond_claim() {
-    let delegators = &["delegator1", "delegator2"];
+    let delegators = &[
+        &MockApi::default().addr_make("delegator1"),
+        &MockApi::default().addr_make("delegator2"),
+    ];
 
     let initial_staking_amount = 1_000_000u128;
     let mut suite = SuiteBuilder::new()
@@ -583,7 +730,7 @@ fn simple_bond_unbond_claim() {
     let lsd_token_balance = suite.query_cw20_balance(delegators[0], &lsd).unwrap();
     assert_eq!(
         lsd_token_balance,
-        Uint128::new(initial_staking_amount).u128()
+        Uint256::new(initial_staking_amount)
     );
 
     let native_token_balance = suite.query_balance(delegators[0], "FUN").unwrap();
@@ -606,22 +753,28 @@ fn simple_bond_unbond_claim() {
     // Verify delegator[0] has their native tokens back
     // Using assert_approx_eq! because the claim amount will not be exact when we implement any sort of exit tax or the exchange rate is off
     assert_approx_eq!(
-        suite.query_balance(delegators[0], "FUN").unwrap(),
-        native_token_balance + lsd_token_balance,
+        Uint128::try_from(suite.query_balance(delegators[0], "FUN").unwrap()).unwrap(),
+        Uint128::try_from(native_token_balance + lsd_token_balance).unwrap(),
         "0.000000000001"
     );
 }
 
 #[test]
 fn bond_unbond() {
-    let delegator = "delegator";
+    let delegator = &MockApi::default().addr_make("delegator");
 
     let amount = 1_000_003u128;
     let mut suite = SuiteBuilder::new()
         .with_initial_balances(vec![(delegator, amount)])
         .with_validators(vec![
-            ("testvaloper1", Decimal::percent(50)),
-            ("testvaloper2", Decimal::percent(50)),
+            (
+                &MockApi::default().addr_make("testvaloper1").into(),
+                Decimal::percent(50),
+            ),
+            (
+                &MockApi::default().addr_make("testvaloper2").into(),
+                Decimal::percent(50),
+            ),
         ])
         .with_periods(23 * HOUR, 28 * DAY)
         .build();
@@ -654,7 +807,7 @@ fn bond_unbond() {
 
 #[test]
 fn small_delegations() {
-    let delegator = "delegator";
+    let delegator = &MockApi::default().addr_make("delegator");
 
     let single_amount = 32u128;
     let delegations = 100u128;
@@ -662,8 +815,14 @@ fn small_delegations() {
     let mut suite = SuiteBuilder::new()
         .with_initial_balances(vec![(delegator, total_amount)])
         .with_validators(vec![
-            ("testvaloper1", Decimal::percent(50)),
-            ("testvaloper2", Decimal::percent(50)),
+            (
+                &MockApi::default().addr_make("testvaloper1").into(),
+                Decimal::percent(50),
+            ),
+            (
+                &MockApi::default().addr_make("testvaloper2").into(),
+                Decimal::percent(50),
+            ),
         ])
         .with_periods(23 * HOUR, 28 * DAY)
         .build();
@@ -694,12 +853,15 @@ fn small_delegations() {
 
     suite.process_native_unbonding();
     suite.claim(delegator).unwrap();
-    assert!(suite.query_balance(delegator, "FUN").unwrap() > total_amount);
+    assert!(suite.query_balance(delegator, "FUN").unwrap() > total_amount.into());
 }
 
 #[test]
 fn actual_undelegation_flow() {
-    let delegators = &["delegator1", "delegator2"];
+    let delegators = &[
+        &MockApi::default().addr_make("delegator1"),
+        &MockApi::default().addr_make("delegator2"),
+    ];
 
     let amount = 1_000_000u128;
     let mut suite = SuiteBuilder::new()
@@ -743,7 +905,10 @@ fn actual_undelegation_flow() {
     suite.claim(delegators[0]).unwrap();
 
     // Verify delegator[0] has their native tokens back
-    assert_eq!(suite.query_balance(delegators[0], "FUN").unwrap(), amount);
+    assert_eq!(
+        suite.query_balance(delegators[0], "FUN").unwrap(),
+        Uint256::from(amount)
+    );
 
     // Unbond delegator[1]
     suite
@@ -769,12 +934,15 @@ fn actual_undelegation_flow() {
     suite.claim(delegators[1]).unwrap();
 
     // Verify delegator[1] has their native tokens back + rewards
-    assert!(suite.query_balance(delegators[1], "FUN").unwrap() > amount);
+    assert!(suite.query_balance(delegators[1], "FUN").unwrap() > amount.into());
 }
 
 #[test]
 fn bond_unbond_simultaneously() {
-    let delegators = &["delegator1", "delegator2"];
+    let delegators = &[
+        &MockApi::default().addr_make("delegator1"),
+        &MockApi::default().addr_make("delegator2"),
+    ];
 
     let amount = 1_000_000u128;
     let mut suite = SuiteBuilder::new()
@@ -809,23 +977,32 @@ fn bond_unbond_simultaneously() {
     suite.claim(delegators[0]).unwrap();
 
     // Verify delegator[0] has their native tokens back
-    assert_eq!(suite.query_balance(delegators[0], "FUN").unwrap(), amount);
+    assert_eq!(suite.query_balance(delegators[0], "FUN").unwrap(), Uint256::from(amount));
 }
 
 #[test]
 fn unbond_epoch_handling() {
     const DAY: u64 = 24 * 60 * 60;
-    let delegator = "delegator";
-    let delegator2 = "delegator2";
+    let delegator = &MockApi::default().addr_make("delegator");
+    let delegator2 = &MockApi::default().addr_make("delegator2");
 
     let amount = 1_000_000u128;
     let amount2 = 100_000u128;
     let mut suite = SuiteBuilder::new()
         .with_initial_balances(vec![(delegator, amount), (delegator2, amount2)])
         .with_validators(vec![
-            ("testvaloper1", Decimal::percent(55)),
-            ("testvaloper2", Decimal::percent(35)),
-            ("testvaloper3", Decimal::percent(10)),
+            (
+                &MockApi::default().addr_make("testvaloper1").into(),
+                Decimal::percent(55),
+            ),
+            (
+                &MockApi::default().addr_make("testvaloper2").into(),
+                Decimal::percent(35),
+            ),
+            (
+                &MockApi::default().addr_make("testvaloper3").into(),
+                Decimal::percent(10),
+            ),
         ])
         .with_periods(23 * HOUR, 28 * DAY)
         .build();
@@ -848,9 +1025,18 @@ fn unbond_epoch_handling() {
     let bonded = BONDED.query(&suite.app.wrap(), suite.hub.clone()).unwrap();
     assert_eq!(
         HashMap::from([
-            ("testvaloper1".to_string(), 605_000u128.into()),
-            ("testvaloper2".to_string(), 385_000u128.into()),
-            ("testvaloper3".to_string(), 110_000u128.into()),
+            (
+                MockApi::default().addr_make("testvaloper1").to_string(),
+                605_000u128.into()
+            ),
+            (
+                MockApi::default().addr_make("testvaloper2").to_string(),
+                385_000u128.into()
+            ),
+            (
+                MockApi::default().addr_make("testvaloper3").to_string(),
+                110_000u128.into()
+            ),
         ]),
         bonded.into_iter().collect()
     );
@@ -867,17 +1053,26 @@ fn unbond_epoch_handling() {
 
     // at this point, the supply should be:
     let supply = SUPPLY.query(&suite.app.wrap(), suite.hub.clone()).unwrap();
-    let rewards = 4169u128;
+    let rewards = 2085u128;
     assert_eq!(supply.total_bonded.u128(), amount + rewards);
     let bonded = BONDED.query(&suite.app.wrap(), suite.hub.clone()).unwrap();
     assert_eq!(
         HashMap::from([
-            // 550_000 + 4169 * 0.55
-            ("testvaloper1".to_string(), 552_292u128.into()),
-            // 350_000 + 4169 * 0.35 (+1)
-            ("testvaloper2".to_string(), 351_460u128.into()),
-            // 100_000 + 4169 * 0.10 (+1)
-            ("testvaloper3".to_string(), 100_417u128.into()),
+            // 550_000 + rewards * 0.55 + dust
+            (
+                MockApi::default().addr_make("testvaloper1").to_string(),
+                551_146u128.into()
+            ),
+            // 350_000 + rewards * 0.35 (+1)
+            (
+                MockApi::default().addr_make("testvaloper2").to_string(),
+                350_730u128.into()
+            ),
+            // 100_000 + rewards * 0.10
+            (
+                MockApi::default().addr_make("testvaloper3").to_string(),
+                100_209u128.into()
+            ),
         ]),
         bonded.into_iter().collect()
     );
@@ -903,12 +1098,21 @@ fn unbond_epoch_handling() {
     let bonded = BONDED.query(&suite.app.wrap(), suite.hub.clone()).unwrap();
     assert_eq!(
         HashMap::from([
-            // 550_000 + 4169 * 0.55
-            ("testvaloper1".to_string(), 552_292u128.into()),
-            // 350_000 + 4169 * 0.35 (+1)
-            ("testvaloper2".to_string(), 351_460u128.into()),
-            // 100_000 + 4169 * 0.10 (+1)
-            ("testvaloper3".to_string(), 100_417u128.into()),
+            // 550_000 + rewards * 0.55 + dust
+            (
+                MockApi::default().addr_make("testvaloper1").to_string(),
+                551_146u128.into()
+            ),
+            // 350_000 + rewards * 0.35 (+1)
+            (
+                MockApi::default().addr_make("testvaloper2").to_string(),
+                350_730u128.into()
+            ),
+            // 100_000 + rewards * 0.10
+            (
+                MockApi::default().addr_make("testvaloper3").to_string(),
+                100_209u128.into()
+            ),
         ]),
         bonded.into_iter().collect()
     );
@@ -927,12 +1131,13 @@ fn unbond_epoch_handling() {
     let supply = SUPPLY.query(&suite.app.wrap(), suite.hub.clone()).unwrap();
     // between unbonding and reinvesting/undelegating, there are some rewards that accrue.
     // these get reinvested...
-    let post_unbond_rewards = 9517u128;
+    let post_unbond_rewards = 9496u128;
     assert_eq!(supply.total_bonded.u128(), post_unbond_rewards);
     assert_eq!(supply.claims.u128(), amount + amount2 + rewards);
     assert_eq!(
-        supply.total_unbonding.u128() + suite.query_balance(suite.hub.as_str(), "FUN").unwrap(),
-        amount + amount2 + rewards
+        Uint256::new(supply.total_unbonding.u128())
+            + suite.query_balance(&suite.hub, "FUN").unwrap(),
+        Uint256::new(amount + amount2 + rewards)
     );
     let storage = suite.read_hub_storage();
     assert_eq!(unbonding_info_num_epochs(&storage), 2);

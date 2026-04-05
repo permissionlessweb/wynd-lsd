@@ -382,22 +382,25 @@ mod tests {
                     assert_eq!(amount.denom, supply.bond_denom, "denom sanity check");
                     assert!(!amount.amount.is_zero(), "amount sanity check");
 
+                    let redelegate_amount = Uint128::try_from(amount.amount).unwrap();
                     // update balance of both validators
                     let src_balance = balances
                         .get_mut(&src_validator)
                         .expect("src_validator has to exist in the balances map");
-                    *src_balance = src_balance.checked_sub(amount.amount).unwrap_or_else(|_| {
-                        panic!(
-                            "overflowed when redelegating {} from {} to {}",
-                            amount.amount, src_validator, dst_validator
-                        )
-                    });
+                    *src_balance = src_balance
+                        .checked_sub(redelegate_amount)
+                        .unwrap_or_else(|_| {
+                            panic!(
+                                "overflowed when redelegating {} from {} to {}",
+                                amount.amount, src_validator, dst_validator
+                            )
+                        });
                     if src_balance.is_zero() {
                         balances.remove(&src_validator);
                     }
                     // dst_validator might not exist yet
                     let dst_balance = balances.entry(dst_validator).or_insert(Uint128::zero());
-                    *dst_balance += amount.amount;
+                    *dst_balance += redelegate_amount;
                 }
                 _ => panic!("unexpected message"),
             }

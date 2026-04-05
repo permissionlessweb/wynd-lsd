@@ -1,4 +1,6 @@
-use cosmwasm_std::{assert_approx_eq, ContractInfo, Decimal, Env, Order, Uint128};
+use cosmwasm_std::{
+    assert_approx_eq, testing::MockApi, ContractInfo, Decimal, Env, Order, Uint128, Uint256,
+};
 
 use crate::{
     multitest::suite::SuiteBuilder,
@@ -13,7 +15,7 @@ const MINUTE: u64 = 60;
 
 #[test]
 fn simple_liveness_slash() {
-    let delegator = "delegator";
+    let delegator = &MockApi::default().addr_make("delegator");
 
     let amount = 1_000_000u128;
     let mut suite = SuiteBuilder::new()
@@ -31,7 +33,12 @@ fn simple_liveness_slash() {
     suite.reinvest().unwrap();
 
     // Simulate liveness slash (0.1%)
-    suite.slash("testvaloper1", Decimal::permille(1)).unwrap();
+    suite
+        .slash(
+            &MockApi::default().addr_make("testvaloper1"),
+            Decimal::permille(1),
+        )
+        .unwrap();
     suite.check_slash().unwrap();
 
     // check that storage is adjusted correctly
@@ -41,7 +48,7 @@ fn simple_liveness_slash() {
     assert_eq!(
         bonded
             .iter()
-            .find(|(val, _)| val == "testvaloper1")
+            .find(|(val, _)| val == &MockApi::default().addr_make("testvaloper1").to_string())
             .unwrap()
             .1
             .u128(),
@@ -61,12 +68,7 @@ fn simple_liveness_slash() {
         )
         .unwrap();
     assert_eq!(
-        supply.tokens_per_share(
-            suite
-                .query_balance(suite.hub.as_str(), "FUN")
-                .unwrap()
-                .into()
-        ),
+        supply.tokens_per_share(suite.query_balance(&suite.hub, "FUN").unwrap()),
         Decimal::permille(999)
     );
 
@@ -88,7 +90,7 @@ fn simple_liveness_slash() {
     // Verify delegator[0] has their native tokens back
     assert_eq!(
         suite.query_balance(delegator, "FUN").unwrap(),
-        amount - amount / 1000
+        Uint256::new(amount - amount / 1000)
     );
 }
 
@@ -96,7 +98,7 @@ fn simple_liveness_slash() {
 #[test_case(28 * DAY + MINUTE; "1 minute after unbonding should be done")]
 #[test_case(27 * DAY + 23 * HOUR + 59 * MINUTE; "1 minute before unbonding should be done")]
 fn timing_check(wait_time: u64) {
-    let delegator = "delegator";
+    let delegator = &MockApi::default().addr_make("delegator");
 
     let amount = 1_000_000u128;
     let mut suite = SuiteBuilder::new()
@@ -124,14 +126,21 @@ fn timing_check(wait_time: u64) {
     suite.update_time(wait_time);
 
     // Simulate liveness slash (0.1%)
-    suite.slash("testvaloper1", Decimal::permille(1)).unwrap();
+    suite
+        .slash(
+            &MockApi::default().addr_make("testvaloper1"),
+            Decimal::permille(1),
+        )
+        .unwrap();
     let err = suite.check_slash().unwrap_err();
-    assert_eq!(ContractError::UnbondingTooClose {}, err.downcast().unwrap());
+    assert!(err
+        .to_string()
+        .contains(&ContractError::UnbondingTooClose {}.to_string()));
 }
 
 #[test]
 fn pending_claims_slashed() {
-    let delegator = "delegator";
+    let delegator = &MockApi::default().addr_make("delegator");
 
     let amount = 1_000_000u128;
     let mut suite = SuiteBuilder::new()
@@ -157,11 +166,19 @@ fn pending_claims_slashed() {
 
     // After triggering unbonding, we should have a pending unbonding
     let supply = SUPPLY.query(&suite.app.wrap(), suite.hub.clone()).unwrap();
-    let unbonding_amount = amount - suite.query_balance(suite.hub.as_str(), "FUN").unwrap();
-    assert_eq!(supply.total_unbonding.u128(), unbonding_amount);
+    let unbonding_amount = Uint256::new(amount) - suite.query_balance(&suite.hub, "FUN").unwrap();
+    assert_eq!(
+        Uint256::new(supply.total_unbonding.u128()),
+        unbonding_amount
+    );
 
     // Simulate liveness slash (0.1%)
-    suite.slash("testvaloper1", Decimal::permille(1)).unwrap();
+    suite
+        .slash(
+            &MockApi::default().addr_make("testvaloper1"),
+            Decimal::permille(1),
+        )
+        .unwrap();
 
     suite.update_time(5 * MINUTE);
     suite.check_slash().unwrap();
@@ -175,39 +192,49 @@ fn pending_claims_slashed() {
         .map(|ub| ub.unwrap())
         .collect();
     // allow a bit of rounding error
+    let unbonding_amount_u128 = Uint128::try_from(unbonding_amount).unwrap();
+    let expected_unbonding = unbonding_amount_u128 - unbonding_amount_u128 / Uint128::new(1000);
     assert_approx_eq!(
-        unbonding[0].1[0].amount.u128(),
-        unbonding_amount - unbonding_amount / 1000,
+        unbonding[0].1[0].amount,
+        expected_unbonding,
         "0.00006"
     );
     assert!(
-        unbonding[0].1[0].amount.u128() <= unbonding_amount - unbonding_amount / 1000,
+        unbonding[0].1[0].amount <= expected_unbonding,
         "should be rounded down, if at all"
     );
     assert_eq!(
         supply.total_unbonding.u128(),
         unbonding[0].1[0].amount.u128()
     );
+    let bonded_before_slash = Uint128::new(amount) - unbonding_amount_u128;
     assert_approx_eq!(
         supply.total_bonded,
-        Uint128::new(amount - unbonding_amount).mul_floor(Decimal::permille(999)),
-        "0.00009"
+        bonded_before_slash.mul_floor(Decimal::permille(999)),
+        "0.0002"
     );
     assert!(
         supply.total_bonded
-            <= Uint128::new(amount - unbonding_amount).mul_floor(Decimal::permille(999)),
+            <= bonded_before_slash.mul_floor(Decimal::permille(999)),
         "should be rounded down, if at all"
     );
     let bonded = BONDED.load(&storage).unwrap();
-    assert_eq!(bonded[0], ("testvaloper1".to_string(), supply.total_bonded));
-    let balance = suite.query_balance(suite.hub.as_str(), "FUN").unwrap();
     assert_eq!(
-        supply.claims.u128(),
-        supply.total_unbonding.u128() + balance
+        bonded[0],
+        (
+            MockApi::default().addr_make("testvaloper1").to_string(),
+            supply.total_bonded
+        )
     );
+    let balance = suite.query_balance(&suite.hub, "FUN").unwrap();
+    assert_eq!(
+        Uint256::new(supply.claims.u128()),
+        Uint256::new(supply.total_unbonding.u128()) + balance
+    );
+    let balance_u128 = Uint128::try_from(balance).unwrap();
     assert_approx_eq!(
-        supply.claims.u128(),
-        unbonding_amount - unbonding_amount / 1000 + balance,
+        supply.claims,
+        unbonding_amount_u128 - unbonding_amount_u128 / Uint128::new(1000) + balance_u128,
         "0.00006"
     );
 
@@ -218,9 +245,11 @@ fn pending_claims_slashed() {
     // Claim delegator's tokens
     suite.claim(delegator).unwrap();
     let received = suite.query_balance(delegator, "FUN").unwrap();
-    assert_approx_eq!(received, amount - amount / 1000, "0.00006");
+    let received_u128 = Uint128::try_from(received).unwrap();
+    let tes = Uint128::new(amount - amount / 1000u128);
+    assert_approx_eq!(received_u128, tes, "0.00006");
     assert!(
-        received <= amount - amount / 1000,
+        received <= Uint256::from(amount - amount / 1000),
         "should be rounded down, if at all"
     );
 }

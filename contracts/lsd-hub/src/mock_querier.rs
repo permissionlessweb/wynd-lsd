@@ -59,9 +59,10 @@ impl WasmMockQuerier {
                 if contract_addr == "cosmos2contract" {
                     let contract_info = ContractInfoResponse::new(
                         1,
-                        Addr::unchecked("admin"),
-                        Some(Addr::unchecked("admin")),
+                        MockApi::default().addr_make("admin"),
+                        Some(MockApi::default().addr_make("admin")),
                         false,
+                        None,
                         None,
                     );
                     SystemResult::Ok(to_json_binary(&contract_info).into())
@@ -91,7 +92,7 @@ impl WasmMockQuerier {
                                 name: "mAPPL".to_string(),
                                 symbol: "mAPPL".to_string(),
                                 decimals: 6,
-                                total_supply,
+                                total_supply: total_supply.into(),
                             })
                             .into(),
                         )
@@ -113,7 +114,10 @@ impl WasmMockQuerier {
                         };
 
                         SystemResult::Ok(
-                            to_json_binary(&BalanceResponse { balance: *balance }).into(),
+                            to_json_binary(&BalanceResponse {
+                                balance: (*balance).into(),
+                            })
+                            .into(),
                         )
                     }
                     _ => panic!("DO NOT ENTER HERE"),

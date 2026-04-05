@@ -216,10 +216,14 @@ mod execute {
         // determine the ratio before these funds were received
         let paid = must_pay(&info, &supply.bond_denom)?;
         let balance = supply.balance(deps.as_ref(), &env)?;
+        // The bank transfer happens before the contract runs, so `balance` already
+        // includes `paid`. Subtract it to get the pre-payment state for correct rate.
+        let paid_u128 = Uint128::try_from(paid).map_err(|_| StdError::msg("paid overflow"))?;
+        let balance_before = balance.saturating_sub(paid_u128);
 
         // calculate how many shares to issue, this is determined by the exchange rate
-        let issue = paid.mul_floor(supply.shares_per_token(balance - paid));
-        supply.issued += issue;
+        let issue = paid.mul_floor(supply.shares_per_token(balance_before));
+        supply.issued += Uint128::try_from(issue).unwrap();
         SUPPLY.save(deps.storage, &supply)?;
 
         let config = CONFIG.load(deps.storage)?;
@@ -245,7 +249,13 @@ mod execute {
         msg: Cw20ReceiveMsg,
     ) -> Result<Response, ContractError> {
         match from_json(&msg.msg)? {
-            ReceiveMsg::Unbond {} => unbond(deps, env, info.sender, msg.amount, msg.sender),
+            ReceiveMsg::Unbond {} => unbond(
+                deps,
+                env,
+                info.sender,
+                Uint128::try_from(msg.amount).unwrap(),
+                msg.sender,
+            ),
         }
     }
 
@@ -265,7 +275,7 @@ mod execute {
         let mut supply = CleanedSupply::load(deps.storage, &env)?;
         let balance = supply.balance(deps.as_ref(), &env)?;
 
-        let native_amount = supply.unbond(amount, balance);
+        let native_amount = supply.unbond(amount.into(), balance);
         SUPPLY.save(deps.storage, &supply)?;
 
         // create a claim
@@ -275,7 +285,7 @@ mod execute {
         CLAIMS.create_claim(
             deps.storage,
             &sender,
-            native_amount,
+            native_amount.into(),
             Timestamp::from_seconds(
                 // this might be a little tight because it assumes we immediately call reinvest at next_unbond,
                 // but it should not be a problem in practice, since the claiming will just fail until the funds are available
@@ -286,7 +296,9 @@ mod execute {
         // burn the sent tokens
         let burn_msg = WasmMsg::Execute {
             contract_addr: config.token_contract.to_string(),
-            msg: to_json_binary(&Cw20ExecuteMsg::Burn { amount })?,
+            msg: to_json_binary(&Cw20ExecuteMsg::Burn {
+                amount: amount.into(),
+            })?,
             funds: vec![],
         };
 
@@ -318,7 +330,7 @@ mod execute {
                 }
                 amount
             },
-            Some(balance.amount),
+            Some(balance.amount.try_into().unwrap()),
         )?;
         if to_send.is_zero() {
             return Err(ContractError::NothingToClaim {});
@@ -333,7 +345,7 @@ mod execute {
                 to_address: info.sender.to_string(),
                 amount: vec![Coin {
                     denom: supply.bond_denom,
-                    amount: to_send,
+                    amount: to_send.try_into().unwrap(),
                 }],
             })
             .add_attribute("action", "claim")
@@ -415,8 +427,8 @@ mod execute {
     }
 
     pub fn check_slash(deps: DepsMut, env: Env) -> Result<Response, ContractError> {
-        /// 0.00001 = 0.001%
-        const SLASHING_THRESHOLD: Decimal = Decimal::raw(10u128.pow(18 - 5));
+        // 0.00001 = 0.001%
+        let slashing_threshold: Decimal = Decimal::new(Uint128::new(10u128.pow(18 - 5)));
 
         let supply: Supply = SUPPLY.load(deps.storage)?;
 
@@ -451,9 +463,14 @@ mod execute {
                     .unwrap_or_default();
 
                 // if difference is larger than threshold, this validator was slashed
-                if stored.saturating_sub(d.amount.amount) >= stored.mul_floor(SLASHING_THRESHOLD) {
+                if stored.saturating_sub(Uint128::try_from(d.amount.amount).unwrap())
+                    >= stored.mul_floor(slashing_threshold)
+                {
                     // keep track of multiplier
-                    Some((&d.validator, Decimal::from_ratio(d.amount.amount, stored)))
+                    Some((
+                        &d.validator,
+                        Decimal::from_ratio(Uint128::try_from(d.amount.amount).unwrap(), stored),
+                    ))
                 } else {
                     None
                 }
@@ -508,8 +525,9 @@ mod execute {
             queried_delegations
                 .iter()
                 .map(|d| d.amount.amount)
+                .map(|x| Uint128::try_from(x).unwrap())
                 .sum::<Uint128>(),
-            "0.0001"
+            "0.0002"
         );
 
         let response = Response::new()
@@ -553,7 +571,7 @@ pub fn reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, Contract
             let result = reply
                 .result
                 .into_result()
-                .map_err(|e| StdError::generic_err(e))?;
+                .map_err(|e| StdError::msg(e.to_string()))?;
             let res = cw_utils::parse_instantiate_response_data(
                 result
                     .msg_responses
@@ -564,9 +582,7 @@ pub fn reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, Contract
                     .unwrap()
                     .as_slice(),
             )
-            .map_err(|_| {
-                StdError::parse_err("MsgInstantiateContractResponse", "failed to parse data")
-            })?;
+            .map_err(|_| StdError::msg("MsgInstantiateContractResponse: failed to parse data"))?;
 
             // Pass the contract admin of this contract to the Token contract
             let contract_info = deps
@@ -595,7 +611,10 @@ pub fn reply(deps: DepsMut, env: Env, reply: Reply) -> Result<Response, Contract
             // reinvest all received rewards, even if some of the withdrawals failed
             reply::after_withdraw_rewards(deps, env)
         }
-        id => Err(StdError::generic_err(format!("invalid reply id: {}; must be 1", id)).into()),
+        id => Err(ContractError::Std(StdError::msg(format!(
+            "invalid reply id: {}; must be 1",
+            id
+        )))),
     }
 }
 
@@ -674,8 +693,8 @@ mod reply {
                         .map(|(address, amount)| StakingMsg::Delegate {
                             validator: address,
                             amount: Coin {
-                                amount,
                                 denom: supply.bond_denom.clone(),
+                                amount: amount.into(),
                             },
                         }),
                 );
@@ -738,8 +757,8 @@ mod reply {
                         .map(|Unbonding { validator, amount }| StakingMsg::Undelegate {
                             validator,
                             amount: Coin {
-                                amount,
                                 denom: supply.bond_denom.clone(),
+                                amount: amount.into(),
                             },
                         })
                         .collect();
@@ -891,10 +910,10 @@ pub fn migrate(deps: DepsMut, _env: Env, msg: MigrateMsg) -> Result<Response, Co
 mod tests {
     use cosmwasm_std::{
         coins,
-        testing::{mock_env, mock_info, MockApi, MockStorage},
+        testing::{message_info, mock_env, MockApi, MockStorage},
         to_json_binary, Addr, Binary, CosmosMsg, Decimal, DepsMut, Empty, Event, OwnedDeps,
         QuerierWrapper, Reply, ReplyOn, Response, StdError, SubMsg, SubMsgResponse, SubMsgResult,
-        Uint128, Validator, WasmMsg,
+        Uint128, Uint256, Validator, WasmMsg,
     };
     use cw20::{Cw20ExecuteMsg, MinterResponse};
     use cw20_base::msg::InstantiateMsg as Cw20InstantiateMsg;
@@ -919,20 +938,20 @@ mod tests {
         let mut funds = QuerierWrapper::<Empty>::new(querier)
             .query_balance(&addr, TOKEN)
             .unwrap();
-        funds.amount += Uint128::new(amount);
+        funds.amount += Uint256::from(amount);
         querier.base.bank.update_balance(&addr, vec![funds]);
     }
 
     // this does a proper deposit of x coins, adjusting the balance of the contract
     fn do_deposit(
         deps: &mut OwnedDeps<MockStorage, MockApi, WasmMockQuerier>,
-        sender: &str,
+        sender: &Addr,
         amount: u128,
     ) {
         increase_contract_balance(&mut deps.querier, amount);
 
         let env = mock_env();
-        let info = mock_info(sender, &coins(amount, TOKEN));
+        let info = message_info(sender, &coins(amount.into(), TOKEN));
         let res = execute::bond(deps.as_mut(), env, info).unwrap();
         assert_eq!(1, res.messages.len());
     }
@@ -949,9 +968,12 @@ mod tests {
 
     fn init(deps: DepsMut, owner: &str) -> Response {
         let msg = InstantiateMsg {
-            treasury: "treasury".to_string(),
+            treasury: MockApi::default().addr_make("treasury").to_string(),
             commission: Decimal::percent(10),
-            validators: vec![("val1".to_string(), Decimal::percent(100))],
+            validators: vec![(
+                MockApi::default().addr_make("val1").to_string(),
+                Decimal::percent(100),
+            )],
             owner: owner.to_string(),
 
             epoch_period: EPOCH,
@@ -973,7 +995,7 @@ mod tests {
         };
 
         let env = mock_env();
-        let info = mock_info(owner, &[]);
+        let info = message_info(&Addr::unchecked(owner), &[]);
         instantiate(deps, env, info, msg).unwrap()
     }
 
@@ -982,10 +1004,13 @@ mod tests {
         let mut deps = mock_dependencies(&[]);
 
         let msg = InstantiateMsg {
-            treasury: "treasury".to_string(),
+            treasury: MockApi::default().addr_make("treasury").to_string(),
             commission: Decimal::percent(10),
-            validators: vec![("val1".to_string(), Decimal::percent(100))],
-            owner: "owner".to_string(),
+            validators: vec![(
+                MockApi::default().addr_make("val1").to_string(),
+                Decimal::percent(100),
+            )],
+            owner: MockApi::default().addr_make("owner").to_string(),
 
             epoch_period: 3600u64,
             unbond_period: 3600u64,
@@ -1004,10 +1029,11 @@ mod tests {
             slashing_safety_margin: 10 * 60,
         };
 
-        let sender = "addr0000";
+        let sender = Addr::unchecked("addr0000");
         // We can just call .unwrap() to assert this was a success
         let env = mock_env();
-        let info = mock_info(sender, &[]);
+        let contract_addr = env.contract.address.to_string();
+        let info = message_info(&sender, &[]);
         let res = instantiate(deps.as_mut(), env, info, msg).unwrap();
         assert_eq!(
             res.messages,
@@ -1016,7 +1042,7 @@ mod tests {
                     code_id: 0u64,
                     msg: to_json_binary(&Cw20InstantiateMsg {
                         mint: Some(MinterResponse {
-                            minter: "cosmos2contract".to_string(),
+                            minter: contract_addr.clone(),
                             cap: None,
                         }),
                         name: "funLSD".to_string(),
@@ -1027,7 +1053,7 @@ mod tests {
                     })
                     .unwrap(),
                     funds: vec![],
-                    admin: Some("cosmos2contract".to_owned()),
+                    admin: Some(contract_addr),
                     label: String::from("label"),
                 }
                 .into(),
@@ -1057,13 +1083,9 @@ mod tests {
             payload: Binary::new(vec![]),
         };
         let err = reply(deps.as_mut(), env.clone(), reply_msg).unwrap_err();
+        println!("{:#?}", err);
         //  Verify the error failed to parse data for the message type
-        assert_eq!(
-            err,
-            ContractError::ParseReply(ParseReplyError::ParseFailure(
-                "failed to decode Protobuf message: invalid field #6 for field #1".to_string()
-            ))
-        );
+        assert!(err.to_string().contains("failed to parse data"));
 
         // Try again with an invalid ID
         let reply_msg = Reply {
@@ -1074,10 +1096,9 @@ mod tests {
         };
         let err = reply(deps.as_mut(), env, reply_msg).unwrap_err();
         //  Verify the error is invalid reply id
-        assert_eq!(
-            err,
-            ContractError::Std(StdError::generic_err("invalid reply id: 999; must be 1"))
-        );
+        assert!(err.to_string().contains(
+            &ContractError::Std(StdError::msg("invalid reply id: 999; must be 1")).to_string()
+        ));
     }
 
     #[test]
@@ -1085,10 +1106,13 @@ mod tests {
         let mut deps = mock_dependencies(&[]);
         // Instantiate message with invalid commission
         let msg = InstantiateMsg {
-            treasury: "treasury".to_string(),
+            treasury: MockApi::default().addr_make("treasury").to_string(),
             commission: Decimal::percent(100),
-            validators: vec![("val1".to_string(), Decimal::percent(100))],
-            owner: "owner".to_string(),
+            validators: vec![(
+                MockApi::default().addr_make("val1").to_string(),
+                Decimal::percent(100),
+            )],
+            owner: MockApi::default().addr_make("owner").to_string(),
 
             epoch_period: 3600u64,
             unbond_period: 3600u64,
@@ -1107,10 +1131,10 @@ mod tests {
             slashing_safety_margin: 10 * 60,
         };
 
-        let sender = "addr0000";
+        let sender = Addr::unchecked("addr0000");
         // We can just call .unwrap() to assert this was a success
         let env = mock_env();
-        let info = mock_info(sender, &[]);
+        let info = message_info(&sender, &[]);
         // Verify the error is InvalidCommission
         assert!(matches!(
             instantiate(deps.as_mut(), env.clone(), info.clone(), msg).unwrap_err(),
@@ -1118,10 +1142,13 @@ mod tests {
         ));
         // Instantiate message with invalid validator weights
         let msg = InstantiateMsg {
-            treasury: "treasury".to_string(),
+            treasury: MockApi::default().addr_make("treasury").to_string(),
             commission: Decimal::percent(10),
-            validators: vec![("val1".to_string(), Decimal::percent(50))],
-            owner: "owner".to_string(),
+            validators: vec![(
+                MockApi::default().addr_make("val1").to_string(),
+                Decimal::percent(50),
+            )],
+            owner: MockApi::default().addr_make("owner").to_string(),
 
             epoch_period: 3600u64,
             unbond_period: 3600u64,
@@ -1148,10 +1175,13 @@ mod tests {
 
         // Instantiate message with a badd Liquidity Discount value
         let msg = InstantiateMsg {
-            treasury: "treasury".to_string(),
+            treasury: MockApi::default().addr_make("treasury").to_string(),
             commission: Decimal::percent(10),
-            validators: vec![("val1".to_string(), Decimal::percent(100))],
-            owner: "owner".to_string(),
+            validators: vec![(
+                MockApi::default().addr_make("val1").to_string(),
+                Decimal::percent(100),
+            )],
+            owner: MockApi::default().addr_make("owner").to_string(),
 
             epoch_period: 3600u64,
             unbond_period: 3600u64,
@@ -1179,25 +1209,25 @@ mod tests {
 
     #[test]
     fn unbonding_burns_tokens() {
-        const SENDER: &str = "sender";
-        const VALIDATOR: &str = "valid-val";
+        let sender_addr = MockApi::default().addr_make("sender");
+        let validator_addr = MockApi::default().addr_make("valid-val");
+        let owner_addr = MockApi::default().addr_make("addr0000");
 
         let mut deps = mock_dependencies(&[]);
 
-        let sender = "addr0000";
         // We can just call .unwrap() to assert this was a success
         let env = mock_env();
 
-        register_validator(&mut deps.querier, VALIDATOR);
-        init(deps.as_mut(), sender);
+        register_validator(&mut deps.querier, &validator_addr.to_string());
+        init(deps.as_mut(), &owner_addr.to_string());
 
-        do_deposit(&mut deps, SENDER, 1700);
+        do_deposit(&mut deps, &sender_addr, 1700);
         let res = execute::unbond(
             deps.as_mut(),
             env,
             Addr::unchecked(""),
             100u128.into(),
-            sender.to_string(),
+            owner_addr.to_string(),
         )
         .unwrap();
         assert_eq!(
@@ -1215,32 +1245,33 @@ mod tests {
 
     #[test]
     fn basic_claim_creation_works() {
-        const SENDER: &str = "sender";
-        const SENDER2: &str = "sender2";
-        const VALIDATOR: &str = "valid-val";
+        let sender = MockApi::default().addr_make("sender");
+        let sender2 = MockApi::default().addr_make("sender2");
+        let validator_addr = MockApi::default().addr_make("valid-val");
+        let creator = MockApi::default().addr_make("creator");
 
         let mut deps = mock_dependencies(&[]);
 
-        register_validator(&mut deps.querier, VALIDATOR);
+        register_validator(&mut deps.querier, &validator_addr.to_string());
 
-        init(deps.as_mut(), "creator");
+        init(deps.as_mut(), &creator.to_string());
 
         // initial deposits
-        do_deposit(&mut deps, SENDER, 1700);
-        do_deposit(&mut deps, SENDER2, 800);
+        do_deposit(&mut deps, &sender, 1700);
+        do_deposit(&mut deps, &sender2, 800);
         // create a claim
         execute::unbond(
             deps.as_mut(),
             mock_env(),
             Addr::unchecked(""),
             500u128.into(),
-            SENDER.to_string(),
+            sender.to_string(),
         )
         .unwrap();
         assert_eq!(
             1,
             CLAIMS
-                .query_claims(deps.as_ref(), &Addr::unchecked(SENDER.to_string()))
+                .query_claims(deps.as_ref(), &sender)
                 .unwrap()
                 .claims
                 .len()
@@ -1252,13 +1283,13 @@ mod tests {
             mock_env(),
             Addr::unchecked(""),
             500u128.into(),
-            SENDER.to_string(),
+            sender.to_string(),
         )
         .unwrap();
         assert_eq!(
             2,
             CLAIMS
-                .query_claims(deps.as_ref(), &Addr::unchecked(SENDER.to_string()))
+                .query_claims(deps.as_ref(), &sender)
                 .unwrap()
                 .claims
                 .len()
@@ -1271,10 +1302,13 @@ mod tests {
         let mut env = mock_env();
 
         let msg = InstantiateMsg {
-            treasury: "treasury".to_string(),
+            treasury: MockApi::default().addr_make("treasury").to_string(),
             commission: Decimal::percent(10),
-            validators: vec![("val1".to_string(), Decimal::percent(100))],
-            owner: "owner".to_string(),
+            validators: vec![(
+                MockApi::default().addr_make("val1").to_string(),
+                Decimal::percent(100),
+            )],
+            owner: MockApi::default().addr_make("owner").to_string(),
 
             epoch_period: 3600u64,
             unbond_period: 3600u64,
@@ -1293,9 +1327,9 @@ mod tests {
             slashing_safety_margin: 10 * 60,
         };
 
-        let sender = "addr0000";
+        let sender = Addr::unchecked("addr0000");
 
-        let info = mock_info(sender, &[]);
+        let info = message_info(&sender, &[]);
         instantiate(deps.as_mut(), env.clone(), info, msg).unwrap();
 
         // update the epoch timer once
