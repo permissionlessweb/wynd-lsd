@@ -30,7 +30,7 @@ wyndex = { git = "https://github.com/permissionlessweb/wynddex", branch = "mvp" 
 #wyndex-factory = { version = "2.0", git = "https://github.com/cosmorama/wynddex.git", features = ["library"] }
 wyndex-factory = { git = "https://github.com/permissionlessweb/wynddex", branch = "mvp", features = ["library"] }
 #wyndex-pair-lsd = { version = "2.0", git = "https://github.com/cosmorama/wynddex.git", features = ["library"] }
-wyndex-pair-lsd = {  path = "../../../wynddex/contracts/pair_lsd",  features = ["library"] }
+wyndex-pair-lsd = { git = "https://github.com/permissionlessweb/wynddex", branch = "mvp", features = ["library"] }
 #wyndex-stake = { version = "2.0", git = "https://github.com/cosmorama/wynddex.git", features = ["library",] }
 wyndex-stake = { git = "https://github.com/permissionlessweb/wynddex", branch = "mvp", features = ["library"] }
 
