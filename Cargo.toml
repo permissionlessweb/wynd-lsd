@@ -9,25 +9,25 @@ repository = "https://github.com/cosmorama/wynd-lsd"
 
 [workspace.dependencies]
 anyhow = "1"
-cosmwasm-schema = { path = "../ZK/cw/zk-cosmwasm/packages/schema" }
-cosmwasm-std = { path = "../ZK/cw/zk-cosmwasm/packages/std" }
-cw2 = { path = "../ZK/cw/zk-cw-minus/packages/cw2" }
+cosmwasm-schema = { git = "https://github.com/permissionlessweb/cosmwasm", branch = "zk-mvp" }
+cosmwasm-std = { git = "https://github.com/permissionlessweb/cosmwasm", branch = "zk-mvp" }
+cw2 = { git = "https://github.com/permissionlessweb/cw-minus", branch = "zk-mvp" }
 #cw20 = "2.0.0"
-cw20 = { path = "../cw-plus/packages/cw20" }
+cw20 = { git = "https://github.com/permissionlessweb/cw-plus", branch = "zk-mvp" }
 #cw20-base = { version = "2.0.0", package = "cw20-base", features = ["library"] }
-cw20-base = { path = "../cw-plus/contracts/cw20-base" }
-cw-controllers = { path = "../ZK/cw/zk-cw-minus/packages/controllers" }
+cw20-base = { git = "https://github.com/permissionlessweb/cw-plus", branch = "zk-mvp" }
+cw-controllers = { git = "https://github.com/permissionlessweb/cw-minus", branch = "zk-mvp" }
 cw-multi-test = { path = "../cw-multi-test-fork" }
-cw-placeholder = { path = "../wynddex/contracts/cw-placeholder" }
+cw-placeholder = { git = "https://github.com/permissionlessweb/wynddex", branch = "zk-mvp" }
 
-cw-storage-plus = { path = "../ZK/cw/zk-storage-plus" }
-cw-utils = { path = "../ZK/cw/zk-cw-minus/packages/cw-utils" }
+cw-storage-plus = { git = "https://github.com/permissionlessweb/cw-storage-plus", branch = "zk-mvp" }
+cw-utils = { git = "https://github.com/permissionlessweb/cw-minus", branch = "zk-mvp" }
 semver = "1"
 serde = { version = "1", default-features = false, features = ["derive"] }
 thiserror = "1"
 wynd-lsd-hub = { path = "contracts/lsd-hub" }
-wyndex = { path = "../wynddex/packages/wyndex" }
-wyndex-pair-lsd = { path = "../wynddex/contracts/pair_lsd" }
+wyndex = { git = "https://github.com/permissionlessweb/wynddex", branch = "zk-mvp" }
+wyndex-pair-lsd = { git = "https://github.com/permissionlessweb/wynddex", branch = "zk-mvp" }
 test-case = "3.0.0"
 
 [profile.release.package.wynd-lsd-hub]

@@ -25,10 +25,10 @@ cw-utils = { workspace = true }
 thiserror = { workspace = true }
 wynd-lsd-hub = { workspace = true }
 
-wyndex = { path = "../../../wynddex/packages/wyndex" }
-wyndex-factory = { path = "../../../wynddex/contracts/factory", features = ["library"] }
-wyndex-pair-lsd = { path = "../../../wynddex/contracts/pair_lsd", features = ["library"] }
-wyndex-stake = { path = "../../../wynddex/contracts/stake", features = ["library"] }
+wyndex = { git = "https://github.com/permissionlessweb/wynddex", branch = "zk-mvp" }
+wyndex-factory = { git = "https://github.com/permissionlessweb/wynddex", branch = "zk-mvp", features = ["library"] }
+wyndex-pair-lsd = { git = "https://github.com/permissionlessweb/wynddex", branch = "zk-mvp", features = ["library"] }
+wyndex-stake = { git = "https://github.com/permissionlessweb/wynddex", branch = "zk-mvp", features = ["library"] }
 
 [dev-dependencies]
 anyhow = { workspace = true }
