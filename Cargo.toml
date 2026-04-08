@@ -9,28 +9,25 @@ repository = "https://github.com/cosmorama/wynd-lsd"
 
 [workspace.dependencies]
 anyhow = "1"
-cosmwasm-schema = { git = "https://github.com/permissionlessweb/cosmwasm", branch = "mvp" }
-cosmwasm-std = { git = "https://github.com/permissionlessweb/cosmwasm", branch = "mvp" }
-cw2 = { git = "https://github.com/permissionlessweb/cw-minus", branch = "main" }
+cosmwasm-schema = { path = "../ZK/cw/zk-cosmwasm/packages/schema" }
+cosmwasm-std = { path = "../ZK/cw/zk-cosmwasm/packages/std" }
+cw2 = { path = "../ZK/cw/zk-cw-minus/packages/cw2" }
 #cw20 = "2.0.0"
-cw20 = { git = "https://github.com/permissionlessweb/cw-plus", branch = "main" }
+cw20 = { path = "../cw-plus/packages/cw20" }
 #cw20-base = { version = "2.0.0", package = "cw20-base", features = ["library"] }
-cw20-base = { git = "https://github.com/permissionlessweb/cw-plus", branch = "main" }
-cw-controllers = { git = "https://github.com/permissionlessweb/cw-minus", branch = "main" }
-cw-multi-test = { git = "https://github.com/permissionlessweb/cw-multi-test", branch = "mvp" }
-#cw-placeholder = { version = "3.0", git = "https://github.com/cosmorama/wynddex.git", tag = "v2.0.2", features = ["library"] }
-cw-placeholder = { git = "https://github.com/permissionlessweb/wynddex", branch = "mvp" }
+cw20-base = { path = "../cw-plus/contracts/cw20-base" }
+cw-controllers = { path = "../ZK/cw/zk-cw-minus/packages/controllers" }
+cw-multi-test = { path = "../cw-multi-test-fork" }
+cw-placeholder = { path = "../wynddex/contracts/cw-placeholder" }
 
-cw-storage-plus = { git = "https://github.com/permissionlessweb/cw-storage-plus", branch = "mvp" }
-cw-utils = { git = "https://github.com/permissionlessweb/cw-minus", branch = "main" }
+cw-storage-plus = { path = "../ZK/cw/zk-storage-plus" }
+cw-utils = { path = "../ZK/cw/zk-cw-minus/packages/cw-utils" }
 semver = "1"
 serde = { version = "1", default-features = false, features = ["derive"] }
 thiserror = "1"
-wynd-lsd-hub = { path = "./contracts/lsd-hub", version = "1.3.0", features = ["library"] }
-# wyndex = { version = "2.0", git = "https://github.com/cosmorama/wynddex.git", tag = "v2.0.2" }
-wyndex = { git = "https://github.com/permissionlessweb/wynddex", branch = "mvp" }
-#wyndex-pair-lsd = { version = "2.0", git = "https://github.com/cosmorama/wynddex.git", tag = "v2.0.2", features = ["library"] }
-wyndex-pair-lsd = { git = "https://github.com/permissionlessweb/wynddex", branch = "mvp" }
+wynd-lsd-hub = { path = "contracts/lsd-hub" }
+wyndex = { path = "../wynddex/packages/wyndex" }
+wyndex-pair-lsd = { path = "../wynddex/contracts/pair_lsd" }
 test-case = "3.0.0"
 
 [profile.release.package.wynd-lsd-hub]
