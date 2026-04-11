@@ -5,6 +5,7 @@ version = 4
 [[package]]
 name = "abstract-cw-multi-test"
 version = "3.0.0-rc"
+source = "git+https://github.com/permissionlessweb/cw-multi-test-fork?branch=zk-mvp#11e8d92b06e65735e8fbf099cb2833fa4edf95f1"
 dependencies = [
  "bech32",
  "cosmwasm-schema",

@@ -1,5 +1,5 @@
 [workspace]
-members = ["packages/*", "contracts/*"]
+members = ["contracts/*", "packages/*"]
 
 [workspace.package]
 version = "1.3.0"
@@ -11,28 +11,24 @@ repository = "https://github.com/cosmorama/wynd-lsd"
 anyhow = "1"
 cosmwasm-schema = { git = "https://github.com/permissionlessweb/cosmwasm", branch = "zk-mvp" }
 cosmwasm-std = { git = "https://github.com/permissionlessweb/cosmwasm", branch = "zk-mvp" }
+cw-controllers = { git = "https://github.com/permissionlessweb/cw-minus", branch = "zk-mvp" }
+cw-multi-test = { package = "abstract-cw-multi-test", git = "https://github.com/permissionlessweb/cw-multi-test-fork", branch = "zk-mvp" }
+cw-placeholder = { git = "https://github.com/permissionlessweb/wynddex", branch = "zk-mvp" }
 cw2 = { git = "https://github.com/permissionlessweb/cw-minus", branch = "zk-mvp" }
 #cw20 = "2.0.0"
 cw20 = { git = "https://github.com/permissionlessweb/cw-plus", branch = "zk-mvp" }
 #cw20-base = { version = "2.0.0", package = "cw20-base", features = ["library"] }
 cw20-base = { git = "https://github.com/permissionlessweb/cw-plus", branch = "zk-mvp" }
-cw-controllers = { git = "https://github.com/permissionlessweb/cw-minus", branch = "zk-mvp" }
-cw-multi-test = { package = "abstract-cw-multi-test", path = "../cw-multi-test-fork" }
-cw-placeholder = { git = "https://github.com/permissionlessweb/wynddex", branch = "zk-mvp" }
 
 cw-storage-plus = { git = "https://github.com/permissionlessweb/cw-storage-plus", branch = "zk-mvp" }
 cw-utils = { git = "https://github.com/permissionlessweb/cw-minus", branch = "zk-mvp" }
 semver = "1"
 serde = { version = "1", default-features = false, features = ["derive"] }
+test-case = "3.0.0"
 thiserror = "1"
 wynd-lsd-hub = { path = "contracts/lsd-hub" }
 wyndex = { git = "https://github.com/permissionlessweb/wynddex", branch = "zk-mvp" }
 wyndex-pair-lsd = { git = "https://github.com/permissionlessweb/wynddex", branch = "zk-mvp" }
-test-case = "3.0.0"
-
-[profile.release.package.wynd-lsd-hub]
-codegen-units = 1
-incremental = false
 
 [profile.release]
 rpath = false
@@ -42,3 +38,7 @@ opt-level = 3
 debug = false
 debug-assertions = false
 strip = true
+
+[profile.release.package.wynd-lsd-hub]
+codegen-units = 1
+incremental = false
